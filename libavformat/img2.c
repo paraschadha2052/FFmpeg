@@ -80,6 +80,7 @@ const IdStrMap ff_img_tags[] = {
     { AV_CODEC_ID_XPM,        "xpm"      },
     { AV_CODEC_ID_XFACE,      "xface"    },
     { AV_CODEC_ID_XWD,        "xwd"      },
+    { AV_CODEC_ID_FITS,       "fits"     },
     { AV_CODEC_ID_NONE,       NULL       }
 };
 
