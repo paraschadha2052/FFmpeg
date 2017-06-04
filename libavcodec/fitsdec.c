@@ -22,33 +22,51 @@
 
 #include "avcodec.h"
 #include "internal.h"
+#include <float.h>
 
-static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
+typedef struct fits_header {
+    char simple;
+    int bitpix;
+    int blank;
+    int naxis;
+    int naxisn[999];
+    int rgb;
+    double bscale;
+    double bzero;
+    double data_min;
+    double data_max;
+} fits_header;
+
+static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_header * header)
 {
-    AVFrame *p=data;
-    const uint8_t *start, *ptr8 = avpkt->data;
-    const uint16_t *ptr16;
-    char simple, str_val[80];
-    int bitpix, naxis, ret, i, j, data_min=INT_MAX, data_max=0, dim_size[999], dim_no, lines_read=0, rgb=0;
-    uint8_t *dst8;
-    uint16_t *dst16, t;
-    uint32_t *dst32;
-    uint64_t *dst64, size;
+    const uint8_t *ptr8 = *ptr;
+    int lines_read = 0, i, dim_no, t, data_min_found = 0, data_max_found = 0;
+    char str_val[80];
+    double d;
 
-    if (sscanf(ptr8, "SIMPLE = %c", &simple) != 1) {
+    header->blank = 0;
+    header->bscale = 1.0;
+    header->bzero = 0;
+    header->rgb = 0;
+
+    if (sscanf(ptr8, "SIMPLE = %c", &header->simple) != 1) {
         av_log(avctx, AV_LOG_ERROR, "missing SIMPLE keyword\n");
         return AVERROR_INVALIDDATA;
     }
 
-    if (simple == 'F') {
-        av_log(avctx, AV_LOG_ERROR, "not a standard FITS file\n");
+    if (header->simple == 'F') {
+        av_log(avctx, AV_LOG_WARNING, "not a standard FITS file\n");
+        return AVERROR_INVALIDDATA;
+    }
+    else if (header->simple != 'T') {
+        av_log(avctx, AV_LOG_ERROR, "invalid SIMPLE value, SIMPLE = %c\n", header->simple);
         return AVERROR_INVALIDDATA;
     }
 
     ptr8 += 80;
     lines_read++;
 
-    if (sscanf(ptr8, "BITPIX = %d", &bitpix) != 1) {
+    if (sscanf(ptr8, "BITPIX = %d", &header->bitpix) != 1) {
         av_log(avctx, AV_LOG_ERROR, "missing BITPIX keyword\n");
         return AVERROR_INVALIDDATA;
     }
@@ -56,26 +74,26 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     ptr8 += 80;
     lines_read++;
 
-    if (sscanf(ptr8, "NAXIS = %d", &naxis) != 1) {
+    if (sscanf(ptr8, "NAXIS = %d", &header->naxis) != 1) {
         av_log(avctx, AV_LOG_ERROR, "missing NAXIS keyword\n");
         return AVERROR_INVALIDDATA;
     }
 
-    if (naxis != 2 && naxis != 3) {
-        av_log(avctx, AV_LOG_ERROR, "unsupported number of dimensions\n");
+    if (header->naxis == 0) {
+        av_log(avctx, AV_LOG_ERROR, "No image data found, NAXIS = %d\n", header->naxis);
+        return AVERROR_INVALIDDATA;
+    }
+
+    if (header->naxis != 2 && header->naxis != 3) {
+        av_log(avctx, AV_LOG_ERROR, "unsupported number of dimensions, NAXIS = %d\n", header->naxis);
         return AVERROR_INVALIDDATA;
     }
 
     ptr8 += 80;
     lines_read++;
 
-    for (i = 0; i < naxis; i++) {
-        if (sscanf(ptr8, "NAXIS%d = %d", &dim_no, &dim_size[i]) != 2) {
-            av_log(avctx, AV_LOG_ERROR, "missing NAXIS%d keyword\n", i+1);
-            return AVERROR_INVALIDDATA;
-        }
-
-        if (dim_no != i+1) {
+    for (i = 0; i < header->naxis; i++) {
+        if (sscanf(ptr8, "NAXIS%d = %d", &dim_no, &header->naxisn[i]) != 2 || dim_no != i+1) {
             av_log(avctx, AV_LOG_ERROR, "missing NAXIS%d keyword\n", i+1);
             return AVERROR_INVALIDDATA;
         }
@@ -83,48 +101,87 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
         ptr8 += 80;
         lines_read++;
     }
-
-    avctx->width = dim_size[0];
-    avctx->height = dim_size[1];
-    size = dim_size[0]*dim_size[1];
 
     while (strncmp(ptr8, "END", 3)) {
-        if (sscanf(ptr8, "CTYPE3 = '%s '", str_val) == 1) {
-            if (strncmp(str_val, "RGB", 3) == 0)
-                rgb = 1;
+        if (sscanf(ptr8, "BLANK = %d", &t) == 1)
+            header->blank = t;
+        else if (sscanf(ptr8, "BSCALE = %lf", &d) == 1)
+            header->bscale = d;
+        else if (sscanf(ptr8, "BZERO = %lf", &d) == 1)
+            header->bzero = d;
+        else if (sscanf(ptr8, "DATAMAX = %lf", &d) == 1) {
+            data_max_found = 1;
+            header->data_max = d;
+        }
+        else if (sscanf(ptr8, "DATAMIN = %lf", &d) == 1) {
+            data_min_found = 1;
+            header->data_min = d;
+        }
+        else if (sscanf(ptr8, "CTYPE3 = '%s '", str_val) == 1) {
+            if (strncmp(str_val, "RGB", 3) == 0) {
+                header->rgb = 1;
+
+                if (header->naxis != 3 || (header->naxisn[2] != 3 && header->naxisn[2] != 4)) {
+                    av_log(avctx, AV_LOG_ERROR, "File contains RGB image but NAXIS = %d and NAXIS3 = %d\n", header->naxis, header->naxisn[2]);
+                    return AVERROR_INVALIDDATA;
+                }
+            }
         }
         ptr8 += 80;
         lines_read++;
-    }
-
-    if (rgb && (naxis != 3 || (dim_size[2] != 3 && dim_size[2] != 4))) {
-        av_log(avctx, AV_LOG_ERROR, "File contains RGB image but NAXIS = %d and NAXIS3 = %d\n", naxis, dim_size[2]);
-        return AVERROR_INVALIDDATA;
     }
 
     ptr8 += 80;
     lines_read++;
     lines_read %= 36;
     ptr8 += ((36 - lines_read) % 36) * 80;
+    *ptr = ptr8;
+
+    if (! data_min_found)
+        header->data_min = DBL_MIN;
+    if (! data_max_found)
+        header->data_max = DBL_MAX;
+
+    return 1;
+}
+
+static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
+{
+    AVFrame *p=data;
+    const uint8_t *start, *ptr8 = avpkt->data;
+    const uint16_t *ptr16;
+    int ret, i, j;
+    uint8_t *dst8;
+    uint16_t *dst16, t;
+    uint32_t *dst32;
+    uint64_t *dst64, size;
+    fits_header header;
+
+    if ((ret = fits_read_header(avctx, &ptr8, &header) < 0))
+        return ret;
+
+    avctx->width = header.naxisn[0];
+    avctx->height = header.naxisn[1];
+    size = (avctx->width) * (avctx->height);
     start = ptr8;
 
-    if (rgb) {
-        if (bitpix == 8)
+    if (header.rgb) {
+        if (header.bitpix == 8)
             avctx->pix_fmt = AV_PIX_FMT_RGB32;
-        else if (bitpix == 16)
+        else if (header.bitpix == 16)
             avctx->pix_fmt = AV_PIX_FMT_RGBA64;
         else {
-            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX, %d\n", bitpix);
+            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX, %d\n", header.bitpix);
             return AVERROR_INVALIDDATA;
         }
     }
     else {
-        if (bitpix == 8)
+        if (header.bitpix == 8)
             avctx->pix_fmt = AV_PIX_FMT_GRAY8;
-        else if (bitpix == 16)
+        else if (header.bitpix == 16)
             avctx->pix_fmt = AV_PIX_FMT_GRAY16;
         else {
-            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX, %d\n", bitpix);
+            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX, %d\n", header.bitpix);
             return AVERROR_INVALIDDATA;
         }
     }
@@ -135,22 +192,22 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
 
-    if (rgb) {
-        if (bitpix == 8) {
+    if (header.rgb) {
+        if (header.bitpix == 8) {
             for (i = 0; i < avctx->height; i++) {
                 dst32 = (uint32_t *)(p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    *dst32++ = (((dim_size[2] == 3) ? 255: ptr8[size*3]) << 24) | (ptr8[0] << 16) | (ptr8[size] << 8) | ptr8[size*2];
+                    *dst32++ = (((header.naxisn[2] == 3) ? 255: ptr8[size*3]) << 24) | (ptr8[0] << 16) | (ptr8[size] << 8) | ptr8[size*2];
                     ptr8++;
                 }
             }
         }
-        else if (bitpix == 16) {
+        else if (header.bitpix == 16) {
             ptr16 = (uint16_t *) ptr8;
             for (i = 0; i < avctx->height; i++) {
                 dst64 = (uint64_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    *dst64++ = ((unsigned long) ((dim_size[2] == 3) ? 65535: ptr16[size*3]) << 48) | ((unsigned long) ptr16[0] << 32) | (ptr16[size] << 16) | ptr16[size*2];
+                    *dst64++ = ((unsigned long) ((header.naxisn[2] == 3) ? 65535: ptr16[size*3]) << 48) | ((unsigned long) ptr16[0] << 32) | (ptr16[size] << 16) | ptr16[size*2];
                     ptr16++;
                 }
             }
@@ -158,13 +215,13 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
         }
     }
     else {
-        if (bitpix == 8) {
+        if (header.bitpix == 8) {
             for (i = 0; i < avctx->height; i++) {
                 for (j = 0; j < avctx->width; j++) {
-                    if (ptr8[0] > data_max)
-                        data_max = ptr8[0];
-                    if (ptr8[0] < data_min)
-                        data_min = ptr8[0];
+                    if (ptr8[0] > header.data_max)
+                        header.data_max = ptr8[0];
+                    if (ptr8[0] < header.data_min)
+                        header.data_min = ptr8[0];
                     ptr8++;
                 }
             }
@@ -175,19 +232,19 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                      to fill the image from bottom to top. */
                 dst8 = (uint8_t *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    *dst8++ = ((ptr8[0] - data_min) * 255) / (data_max - data_min);
+                    *dst8++ = ((ptr8[0] - header.data_min) * 255) / (header.data_max - header.data_min);
                     ptr8++;
                 }
             }
         }
-        else if (bitpix == 16) {
+        else if (header.bitpix == 16) {
             for (i = 0; i < avctx->height; i++) {
                 for (j = 0; j < avctx->width; j++) {
                     t = (ptr8[0] << 8) | ptr8[1];
-                    if (t > data_max)
-                        data_max = t;
-                    if (t < data_min)
-                        data_min = t;
+                    if (t > header.data_max)
+                        header.data_max = t;
+                    if (t < header.data_min)
+                        header.data_min = t;
                     ptr8 += 2;
                 }
             }
@@ -196,7 +253,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    t = ((((ptr8[0] << 8) | ptr8[1]) - data_min) * 65535) / (data_max - data_min);
+                    t = ((((ptr8[0] << 8) | ptr8[1]) - header.data_min) * 65535) / (header.data_max - header.data_min);
                     *dst16++ = t;
                     ptr8 += 2;
                 }
