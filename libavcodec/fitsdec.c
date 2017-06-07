@@ -46,11 +46,12 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
     double tdbl;
     int i, j;
 
+    header->data_min = DBL_MIN;
+    header->data_max = DBL_MAX;
     switch (header->bitpix) {
         case -64:
             t64 = (((uint64_t) ptr8[0]) << 56) | (((uint64_t) ptr8[1]) << 48) | (((uint64_t) ptr8[2]) << 40) | (((uint64_t) ptr8[3]) << 32) | (ptr8[4] << 24) | (ptr8[5] << 16) | (ptr8[6] << 8) | ptr8[7];
             memcpy(&tdbl, &t64, 8);
-            header->data_min = header->data_max = tdbl;
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t64 = (((uint64_t) ptr8[0]) << 56) | (((uint64_t) ptr8[1]) << 48) | (((uint64_t) ptr8[2]) << 40) | (((uint64_t) ptr8[3]) << 32) | (ptr8[4] << 24) | (ptr8[5] << 16) | (ptr8[6] << 8) | ptr8[7];
@@ -66,7 +67,6 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
         case -32:
             t32 = (ptr8[0] << 24) | (ptr8[1] << 16) | (ptr8[2] << 8) | ptr8[3];
             memcpy(&tflt, &t32, 4);
-            header->data_min = header->data_max = tflt;
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t32 = (ptr8[0] << 24) | (ptr8[1] << 16) | (ptr8[2] << 8) | ptr8[3];
@@ -80,7 +80,6 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
             }
             return 1;
         case 8:
-            header->data_min = header->data_max = ptr8[0];
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     if(ptr8[0] != header->blank) {
@@ -95,7 +94,6 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
             return 1;
         case 16:
             t16 = ((ptr8[0] << 8) | ptr8[1]);
-            header->data_min = header->data_max = t16; // what if initial value is blank...
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t16 = ((ptr8[0] << 8) | ptr8[1]);
@@ -111,7 +109,6 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
             return 1;
         case 32:
             t32 = (ptr8[0] << 24) | (ptr8[1] << 16) | (ptr8[2] << 8) | ptr8[3];
-            header->data_min = header->data_max = t32;
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t32 = (ptr8[0] << 24) | (ptr8[1] << 16) | (ptr8[2] << 8) | ptr8[3];
@@ -127,7 +124,6 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
             return 1;
         case 64:
             t64 = (((uint64_t) ptr8[0]) << 56) | (((uint64_t) ptr8[1]) << 48) | (((uint64_t) ptr8[2]) << 40) | (((uint64_t) ptr8[3]) << 32) | (ptr8[4] << 24) | (ptr8[5] << 16) | (ptr8[6] << 8) | ptr8[7];
-            header->data_min = header->data_max = t64;
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t64 = (((uint64_t) ptr8[0]) << 56) | (((uint64_t) ptr8[1]) << 48) | (((uint64_t) ptr8[2]) << 40) | (((uint64_t) ptr8[3]) << 32) | (ptr8[4] << 24) | (ptr8[5] << 16) | (ptr8[6] << 8) | ptr8[7];
@@ -259,7 +255,6 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
         }
     }
     else{
-        // ToDo: Remove bscale and bzero keywords as they have no use...
         header->data_min = (header->data_min - header->bzero) / header->bscale;
         header->data_max = (header->data_max - header->bzero) / header->bscale;
     }
@@ -279,10 +274,8 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     uint8_t *dst8;
     uint16_t *dst16;
     uint32_t *dst32;
-    uint64_t *dst64, size;
+    uint64_t *dst64, size, r, g, b, a, t;
     fits_header header;
-
-    FILE * fptr = fopen("../../../op.txt", "w+");
 
     if ((ret = fits_read_header(avctx, &ptr8, &header) < 0))
         return ret;
@@ -315,21 +308,68 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
         return ret;
 
     if (header.rgb) {
-        // ToDo: Add blank, bzero, bscale support ??
         if (header.bitpix == 8) {
             for (i = 0; i < avctx->height; i++) {
+                /* FITS stores images with bottom row first. Therefore we have
+                     to fill the image from bottom to top. */
                 dst32 = (uint32_t *)(p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    *dst32++ = (((header.naxisn[2] == 3) ? 255: ptr8[size*3]) << 24) | (ptr8[0] << 16) | (ptr8[size] << 8) | ptr8[size*2];
+                    if (header.naxisn[2] == 4) {
+                        if (ptr8[size*3] != header.blank)
+                            t = ptr8[size*3]*header.bscale + header.bzero;
+                        a = t << 24;
+                    }
+                    else
+                        a = (255 << 24);
+
+                    if (ptr8[0] != header.blank)
+                        t = ptr8[0]*header.bscale + header.bzero;
+                    r = t << 16;
+
+                    if (ptr8[size] != header.blank)
+                        t = ptr8[size]*header.bscale + header.bzero;
+                    g = t << 8;
+
+                    if (ptr8[size*2] != header.blank)
+                        t = ptr8[size*2]*header.bscale + header.bzero;
+                    b = t;
+
+                    *dst32++ = ((uint32_t)a) | ((uint32_t)r) | ((uint32_t)g) | ((uint32_t)b);
                     ptr8++;
                 }
             }
         }
         else if (header.bitpix == 16) {
+            // not tested ....
             for (i = 0; i < avctx->height; i++) {
                 dst64 = (uint64_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    *dst64++ = ((uint64_t) ((header.naxisn[2] == 3) ? 65535: ((ptr8[size * 3] << 8) | ptr8[size * 3 + 1])) << 48) | ((uint64_t) (ptr8[0] << 8 | ptr8[1]) << 32) | ((ptr8[size] << 8 | ptr8[size + 1]) << 16) | (ptr8[size * 2] << 8 | ptr8[size * 2 + 1]);
+
+                    if (header.naxisn[2] == 4) {
+                        t = ((ptr8[size * 3] << 8) | ptr8[size * 3 + 1]);
+                        if (t != header.blank)
+                            t = t*header.bscale + header.bzero;
+                        a = t << 48;
+                    }
+                    else
+                        a = 65535ULL << 48;
+
+                    t = ptr8[0] << 8 | ptr8[1];
+                    if (t != header.blank)
+                        t = t*header.bscale + header.bzero;
+                    r = t << 32;
+
+                    t = ptr8[size] << 8 | ptr8[size + 1];
+                    if (t != header.blank)
+                        t = t*header.bscale + header.bzero;
+                    g = t << 16;
+
+                    t = ptr8[size * 2] << 8 | ptr8[size * 2 + 1];
+                    if (t != header.blank)
+                        t = t*header.bscale + header.bzero;
+                    b = t;
+
+                    *dst64++ = a | r | g | b;
                     ptr8 += 2;
                 }
             }
@@ -338,8 +378,6 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     else {
         if (header.bitpix == 8) {
             for (i = 0; i < avctx->height; i++) {
-                  /* FITS stores images with bottom row first. Therefore we have
-                     to fill the image from bottom to top. */
                 dst8 = (uint8_t *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     if(ptr8[0] != header.blank)
@@ -360,7 +398,6 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     *dst16++ = t16;
                     ptr8 += 2;
                 }
-                fprintf(fptr, "\n");
             }
         }
         else if (header.bitpix == 32) {
