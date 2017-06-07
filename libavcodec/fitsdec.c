@@ -46,8 +46,8 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
     double tdbl;
     int i, j;
 
-    header->data_min = DBL_MIN;
-    header->data_max = DBL_MAX;
+    header->data_min = DBL_MAX;
+    header->data_max = DBL_MIN;
     switch (header->bitpix) {
         case -64:
             t64 = (((uint64_t) ptr8[0]) << 56) | (((uint64_t) ptr8[1]) << 48) | (((uint64_t) ptr8[2]) << 40) | (((uint64_t) ptr8[3]) << 32) | (ptr8[4] << 24) | (ptr8[5] << 16) | (ptr8[6] << 8) | ptr8[7];
@@ -255,6 +255,9 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
         }
     }
     else{
+        /* instead of applying bscale and bzero to every element, we can do inverse transformation on data_min and
+           data_max
+        */
         header->data_min = (header->data_min - header->bzero) / header->bscale;
         header->data_max = (header->data_max - header->bzero) / header->bscale;
     }
