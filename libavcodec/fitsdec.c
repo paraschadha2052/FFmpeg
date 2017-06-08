@@ -1,10 +1,5 @@
 /*
  * FITS image decoder
- * It supports all 2-d images alongwith, bzero, bscale and blank keywords.
- * RGBA images are supported as NAXIS3 = 3 or 4 i.e. Planes in RGBA order. Also CTYPE = 'RGB ' should be present.
- * It currently does not support XTENSION keyword.
- * Also to interpret data, values are linearly scaled using min-max scaling but not RGB images.
- *
  * Copyright (c) 2017 Paras Chadha
  *
  * This file is part of FFmpeg.
@@ -22,6 +17,15 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/**
+ * @file
+ * FITS image decoder
+ * It supports all 2-d images alongwith, bzero, bscale and blank keywords.
+ * RGBA images are supported as NAXIS3 = 3 or 4 i.e. Planes in RGBA order. Also CTYPE = 'RGB ' should be present.
+ * It currently does not support XTENSION keyword.
+ * Also to interpret data, values are linearly scaled using min-max scaling but not RGB images.
  */
 
 #include "avcodec.h"
@@ -96,7 +100,7 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header, const u
         case 8:
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
-                    if(ptr8[0] != header->blank) {
+                    if (ptr8[0] != header->blank) {
                         if (ptr8[0] > header->data_max)
                             header->data_max = ptr8[0];
                         if (ptr8[0] < header->data_min)
@@ -111,7 +115,7 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header, const u
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t16 = ((ptr8[0] << 8) | ptr8[1]);
-                    if(t16 != header->blank) {
+                    if (t16 != header->blank) {
                         if (t16 > header->data_max)
                             header->data_max = t16;
                         if (t16 < header->data_min)
@@ -126,7 +130,7 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header, const u
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t32 = (ptr8[0] << 24) | (ptr8[1] << 16) | (ptr8[2] << 8) | ptr8[3];
-                    if(t32 != header->blank) {
+                    if (t32 != header->blank) {
                         if (t32 > header->data_max)
                             header->data_max = t32;
                         if (t32 < header->data_min)
@@ -141,7 +145,7 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header, const u
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t64 = (((uint64_t) ptr8[0]) << 56) | (((uint64_t) ptr8[1]) << 48) | (((uint64_t) ptr8[2]) << 40) | (((uint64_t) ptr8[3]) << 32) | (ptr8[4] << 24) | (ptr8[5] << 16) | (ptr8[6] << 8) | ptr8[7];
-                    if(t64 != header->blank) {
+                    if (t64 != header->blank) {
                         if (t64 > header->data_max)
                             header->data_max = t64;
                         if (t64 < header->data_min)
@@ -178,7 +182,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     header->bzero = 0;
     header->rgb = 0;
 
-    if(end - ptr8 < 80)
+    if (end - ptr8 < 80)
         return AVERROR_INVALIDDATA;
 
     if (sscanf(ptr8, "SIMPLE = %c", &header->simple) != 1) {
@@ -196,7 +200,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     ptr8 += 80;
     lines_read++;
 
-    if(end - ptr8 < 80)
+    if (end - ptr8 < 80)
         return AVERROR_INVALIDDATA;
 
     if (sscanf(ptr8, "BITPIX = %d", &header->bitpix) != 1) {
@@ -208,7 +212,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     ptr8 += 80;
     lines_read++;
 
-    if(end - ptr8 < 80)
+    if (end - ptr8 < 80)
         return AVERROR_INVALIDDATA;
 
     if (sscanf(ptr8, "NAXIS = %d", &header->naxis) != 1) {
@@ -230,7 +234,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     lines_read++;
 
     for (i = 0; i < header->naxis; i++) {
-        if(end - ptr8 < 80)
+        if (end - ptr8 < 80)
             return AVERROR_INVALIDDATA;
 
         if (sscanf(ptr8, "NAXIS%d = %d", &dim_no, &header->naxisn[i]) != 2 || dim_no != i+1) {
@@ -243,7 +247,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
         lines_read++;
     }
 
-    if(end - ptr8 < 80)
+    if (end - ptr8 < 80)
             return AVERROR_INVALIDDATA;
 
     while (strncmp(ptr8, "END", 3)) {
@@ -274,7 +278,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
         ptr8 += 80;
         lines_read++;
 
-        if(end - ptr8 < 80)
+        if (end - ptr8 < 80)
             return AVERROR_INVALIDDATA;
     }
 
@@ -288,16 +292,16 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     lines_read %= 36;
 
     t = ((36 - lines_read) % 36) * 80;
-    if(end - ptr8 < t)
+    if (end - ptr8 < t)
         return AVERROR_INVALIDDATA;
     ptr8 += t;
     *ptr = ptr8;
 
-    if(end - ptr8 < size)
+    if (end - ptr8 < size)
         return AVERROR_INVALIDDATA;
 
     if (header->rgb == 0 && (data_min_found == 0 || data_max_found == 0)) {
-        if((ret = fill_data_min_max(ptr8, header, end)) < 0) {
+        if ((ret = fill_data_min_max(ptr8, header, end)) < 0) {
             av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header->bitpix);
             return AVERROR_INVALIDDATA;
         }
@@ -433,7 +437,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             for (i = 0; i < avctx->height; i++) {
                 dst8 = (uint8_t *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    if(ptr8[0] != header.blank)
+                    if (ptr8[0] != header.blank)
                         *dst8++ = ((ptr8[0] - header.data_min) * 255) / (header.data_max - header.data_min);
                     else
                         *dst8++ = ptr8[0];
@@ -446,7 +450,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t16 = ((ptr8[0] << 8) | ptr8[1]);
-                    if(t16 != header.blank)
+                    if (t16 != header.blank)
                         t16 = ((t16 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     *dst16++ = t16;
                     ptr8 += 2;
@@ -458,7 +462,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t32 = (ptr8[0] << 24) | (ptr8[1] << 16) | (ptr8[2] << 8) | ptr8[3];
-                    if(t32 != header.blank)
+                    if (t32 != header.blank)
                         t16 = ((t32 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     *dst16++ = t16;
                     ptr8 += 4;
@@ -470,7 +474,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t64 = (((uint64_t) ptr8[0]) << 56) | (((uint64_t) ptr8[1]) << 48) | (((uint64_t) ptr8[2]) << 40) | (((uint64_t) ptr8[3]) << 32) | (ptr8[4] << 24) | (ptr8[5] << 16) | (ptr8[6] << 8) | ptr8[7];
-                    if(t64 != header.blank)
+                    if (t64 != header.blank)
                         t16 = ((t64 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     *dst16++ = t16;
                     ptr8 += 8;
