@@ -1,5 +1,9 @@
 /*
  * FITS image decoder
+ * It supports all 2-d images alongwith, bzero, bscale and blank keywords.
+ * RGBA images are supported as NAXIS3 = 3 or 4 i.e. Planes in RGBA order. Also CTYPE = 'RGB ' should be present.
+ * It currently does not support XTENSION keyword.
+ * Also to interpret data, values are linearly scaled using min-max scaling but not RGB images.
  *
  * Copyright (c) 2017 Paras Chadha
  *
@@ -24,19 +28,29 @@
 #include "internal.h"
 #include <float.h>
 
+/**
+ * Structure to store the header keywords in FITS file
+ */
 typedef struct fits_header {
     char simple;
     int bitpix;
     int blank;
     int naxis;
     int naxisn[999];
-    int rgb;
+    int rgb; /**< 1 if file contains RGB image, 0 otherwise */
     double bscale;
     double bzero;
     double data_min;
     double data_max;
 } fits_header;
 
+/**
+ * function calculates the data_min and data_max values from the data.
+ * This is called if the values are not present in the header.
+ * @param ptr8 - pointer to the data
+ * @param header - pointer to the header
+ * @return 1, if calculated successfully, otherwise AVERROR_INVALIDDATA
+ */
 static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
 {
     int16_t t16;
@@ -143,6 +157,13 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
     return 1;
 }
 
+/**
+ * function reads the fits header and stores the values in fits_header pointed by header
+ * @param avctx - AVCodec context
+ * @param ptr - pointer to pointer to the data
+ * @param header - pointer to the fits_header
+ * @return 1, if calculated successfully, otherwise AVERROR_INVALIDDATA
+ */
 static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_header * header)
 {
     const uint8_t *ptr8 = *ptr;
@@ -160,10 +181,8 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
         return AVERROR_INVALIDDATA;
     }
 
-    if (header->simple == 'F') {
+    if (header->simple == 'F')
         av_log(avctx, AV_LOG_WARNING, "not a standard FITS file\n");
-        return AVERROR_INVALIDDATA;
-    }
     else if (header->simple != 'T') {
         av_log(avctx, AV_LOG_ERROR, "invalid SIMPLE value, SIMPLE = %c\n", header->simple);
         return AVERROR_INVALIDDATA;
@@ -238,7 +257,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     }
 
     if (header->rgb == 0 && header->naxis != 2){
-        av_log(avctx, AV_LOG_ERROR, "unsupported NAXIS, %d\n", header->naxis);
+        av_log(avctx, AV_LOG_ERROR, "unsupported number of dimensions, NAXIS = %d\n", header->naxis);
         return AVERROR_INVALIDDATA;
     }
 
@@ -255,9 +274,10 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
         }
     }
     else{
-        /* instead of applying bscale and bzero to every element, we can do inverse transformation on data_min and
-           data_max
-        */
+        /*
+         * instead of applying bscale and bzero to every element, we can do inverse transformation on data_min and
+         * data_max
+         */
         header->data_min = (header->data_min - header->bzero) / header->bscale;
         header->data_max = (header->data_max - header->bzero) / header->bscale;
     }
@@ -283,9 +303,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     if ((ret = fits_read_header(avctx, &ptr8, &header) < 0))
         return ret;
 
-    avctx->width = header.naxisn[0];
-    avctx->height = header.naxisn[1];
-    size = (avctx->width) * (avctx->height);
+    size = (header.naxisn[0]) * (header.naxisn[1]);
 
     if (header.rgb) {
         if (header.bitpix == 8)
@@ -293,7 +311,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
         else if (header.bitpix == 16)
             avctx->pix_fmt = AV_PIX_FMT_RGBA64;
         else {
-            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX, %d\n", header.bitpix);
+            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX = %d\n", header.bitpix);
             return AVERROR_INVALIDDATA;
         }
     }
@@ -304,7 +322,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             avctx->pix_fmt = AV_PIX_FMT_GRAY16;
     }
 
-    if ((ret = ff_set_dimensions(avctx, avctx->width, avctx->height)) < 0)
+    if ((ret = ff_set_dimensions(avctx, header.naxisn[0], header.naxisn[1])) < 0)
         return ret;
 
     if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
@@ -313,28 +331,30 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     if (header.rgb) {
         if (header.bitpix == 8) {
             for (i = 0; i < avctx->height; i++) {
-                /* FITS stores images with bottom row first. Therefore we have
-                     to fill the image from bottom to top. */
+                /*
+                 * FITS stores images with bottom row first. Therefore we have
+                 * to fill the image from bottom to top.
+                 */
                 dst32 = (uint32_t *)(p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     if (header.naxisn[2] == 4) {
-                        if (ptr8[size*3] != header.blank)
-                            t = ptr8[size*3]*header.bscale + header.bzero;
+                        if (ptr8[size * 3] != header.blank)
+                            t = ptr8[size * 3] * header.bscale + header.bzero;
                         a = t << 24;
                     }
                     else
                         a = (255 << 24);
 
                     if (ptr8[0] != header.blank)
-                        t = ptr8[0]*header.bscale + header.bzero;
+                        t = ptr8[0] * header.bscale + header.bzero;
                     r = t << 16;
 
                     if (ptr8[size] != header.blank)
-                        t = ptr8[size]*header.bscale + header.bzero;
+                        t = ptr8[size] * header.bscale + header.bzero;
                     g = t << 8;
 
-                    if (ptr8[size*2] != header.blank)
-                        t = ptr8[size*2]*header.bscale + header.bzero;
+                    if (ptr8[size * 2] != header.blank)
+                        t = ptr8[size * 2] * header.bscale + header.bzero;
                     b = t;
 
                     *dst32++ = ((uint32_t)a) | ((uint32_t)r) | ((uint32_t)g) | ((uint32_t)b);
