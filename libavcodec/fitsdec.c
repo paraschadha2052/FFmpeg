@@ -51,7 +51,7 @@ typedef struct fits_header {
  * @param header - pointer to the header
  * @return 1, if calculated successfully, otherwise AVERROR_INVALIDDATA
  */
-static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
+static int fill_data_min_max(const uint8_t * ptr8, fits_header * header, const uint8_t * end)
 {
     int16_t t16;
     int32_t t32;
@@ -162,12 +162,14 @@ static int fill_data_min_max(const uint8_t * ptr8, fits_header * header)
  * @param avctx - AVCodec context
  * @param ptr - pointer to pointer to the data
  * @param header - pointer to the fits_header
+ * @param end - pointer to end of packet
  * @return 1, if calculated successfully, otherwise AVERROR_INVALIDDATA
  */
-static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_header * header)
+static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_header * header, const uint8_t * end)
 {
     const uint8_t *ptr8 = *ptr;
     int lines_read = 0, i, dim_no, t, data_min_found = 0, data_max_found = 0, ret;
+    uint64_t size=1;
     char str_val[80];
     double d;
 
@@ -175,6 +177,9 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     header->bscale = 1.0;
     header->bzero = 0;
     header->rgb = 0;
+
+    if(end - ptr8 < 80)
+        return AVERROR_INVALIDDATA;
 
     if (sscanf(ptr8, "SIMPLE = %c", &header->simple) != 1) {
         av_log(avctx, AV_LOG_ERROR, "missing SIMPLE keyword\n");
@@ -191,13 +196,20 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     ptr8 += 80;
     lines_read++;
 
+    if(end - ptr8 < 80)
+        return AVERROR_INVALIDDATA;
+
     if (sscanf(ptr8, "BITPIX = %d", &header->bitpix) != 1) {
         av_log(avctx, AV_LOG_ERROR, "missing BITPIX keyword\n");
         return AVERROR_INVALIDDATA;
     }
 
+    size = abs(header->bitpix) / 8;
     ptr8 += 80;
     lines_read++;
+
+    if(end - ptr8 < 80)
+        return AVERROR_INVALIDDATA;
 
     if (sscanf(ptr8, "NAXIS = %d", &header->naxis) != 1) {
         av_log(avctx, AV_LOG_ERROR, "missing NAXIS keyword\n");
@@ -218,14 +230,21 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     lines_read++;
 
     for (i = 0; i < header->naxis; i++) {
+        if(end - ptr8 < 80)
+            return AVERROR_INVALIDDATA;
+
         if (sscanf(ptr8, "NAXIS%d = %d", &dim_no, &header->naxisn[i]) != 2 || dim_no != i+1) {
             av_log(avctx, AV_LOG_ERROR, "missing NAXIS%d keyword\n", i+1);
             return AVERROR_INVALIDDATA;
         }
 
+        size *= header->naxisn[i];
         ptr8 += 80;
         lines_read++;
     }
+
+    if(end - ptr8 < 80)
+            return AVERROR_INVALIDDATA;
 
     while (strncmp(ptr8, "END", 3)) {
         if (sscanf(ptr8, "BLANK = %d", &t) == 1)
@@ -254,6 +273,9 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
         }
         ptr8 += 80;
         lines_read++;
+
+        if(end - ptr8 < 80)
+            return AVERROR_INVALIDDATA;
     }
 
     if (header->rgb == 0 && header->naxis != 2){
@@ -264,11 +286,18 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
     ptr8 += 80;
     lines_read++;
     lines_read %= 36;
-    ptr8 += ((36 - lines_read) % 36) * 80;
+
+    t = ((36 - lines_read) % 36) * 80;
+    if(end - ptr8 < t)
+        return AVERROR_INVALIDDATA;
+    ptr8 += t;
     *ptr = ptr8;
 
+    if(end - ptr8 < size)
+        return AVERROR_INVALIDDATA;
+
     if (header->rgb == 0 && (data_min_found == 0 || data_max_found == 0)) {
-        if((ret = fill_data_min_max(ptr8, header)) < 0) {
+        if((ret = fill_data_min_max(ptr8, header, end)) < 0) {
             av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header->bitpix);
             return AVERROR_INVALIDDATA;
         }
@@ -287,7 +316,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, fits_hea
 static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
 {
     AVFrame *p=data;
-    const uint8_t *ptr8 = avpkt->data;
+    const uint8_t *ptr8 = avpkt->data, *end;
     int16_t t16;
     int32_t t32;
     int64_t t64;
@@ -300,7 +329,8 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     uint64_t *dst64, size, r, g, b, a, t;
     fits_header header;
 
-    if ((ret = fits_read_header(avctx, &ptr8, &header) < 0))
+    end = ptr8 + avpkt->size;
+    if ((ret = fits_read_header(avctx, &ptr8, &header, end) < 0))
         return ret;
 
     size = (header.naxisn[0]) * (header.naxisn[1]);
