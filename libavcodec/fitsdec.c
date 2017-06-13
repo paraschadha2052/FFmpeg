@@ -82,7 +82,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
                     ptr8 += 8;
                 }
             }
-            return 1;
+            break;
         case -32:
             t32 = AV_RB32(ptr8);
             memcpy(&tflt, &t32, 4);
@@ -97,7 +97,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
                     ptr8 += 4;
                 }
             }
-            return 1;
+            break;
         case 8:
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
@@ -110,7 +110,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
                     ptr8++;
                 }
             }
-            return 1;
+            break;
         case 16:
             t16 = AV_RB16(ptr8);
             for (i = 0; i < header->naxisn[1]; i++) {
@@ -125,7 +125,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
                     ptr8 += 2;
                 }
             }
-            return 1;
+            break;
         case 32:
             t32 = AV_RB32(ptr8);
             for (i = 0; i < header->naxisn[1]; i++) {
@@ -140,7 +140,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
                     ptr8 += 4;
                 }
             }
-            return 1;
+            break;
         case 64:
             t64 = AV_RB64(ptr8);
             for (i = 0; i < header->naxisn[1]; i++) {
@@ -155,7 +155,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
                     ptr8 += 8;
                 }
             }
-            return 1;
+            break;
         default:
             return AVERROR_INVALIDDATA;
     }
@@ -511,5 +511,5 @@ AVCodec ff_fits_decoder = {
     .priv_data_size = sizeof(FITSDecContext),
     .decode         = fits_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("FITS image")
+    .long_name      = NULL_IF_CONFIG_SMALL("Flexible Image Transport System")
 };
