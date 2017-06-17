@@ -121,6 +121,7 @@ static void register_all(void)
     REGISTER_MUXDEMUX(FFMETADATA,       ffmetadata);
     REGISTER_MUXER   (FIFO,             fifo);
     REGISTER_MUXDEMUX(FILMSTRIP,        filmstrip);
+    REGISTER_DEMUXER (FITS,             fits);
     REGISTER_MUXDEMUX(FLAC,             flac);
     REGISTER_DEMUXER (FLIC,             flic);
     REGISTER_MUXDEMUX(FLV,              flv);
@@ -355,7 +356,6 @@ static void register_all(void)
     REGISTER_DEMUXER (IMAGE_DDS_PIPE,        image_dds_pipe);
     REGISTER_DEMUXER (IMAGE_DPX_PIPE,        image_dpx_pipe);
     REGISTER_DEMUXER (IMAGE_EXR_PIPE,        image_exr_pipe);
-    REGISTER_DEMUXER (IMAGE_FITS_PIPE,       image_fits_pipe);
     REGISTER_DEMUXER (IMAGE_J2K_PIPE,        image_j2k_pipe);
     REGISTER_DEMUXER (IMAGE_JPEG_PIPE,       image_jpeg_pipe);
     REGISTER_DEMUXER (IMAGE_JPEGLS_PIPE,     image_jpegls_pipe);

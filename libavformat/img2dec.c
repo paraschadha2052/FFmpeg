@@ -959,15 +959,6 @@ static int xpm_probe(AVProbeData *p)
     return 0;
 }
 
-static int fits_probe(AVProbeData *p)
-{
-    const uint8_t *b = p->buf;
-
-    if (AV_RB32(b) == 0x53494d50 && AV_RB16(b+4) == 0x4c45)
-        return AVPROBE_SCORE_MAX - 1;
-    return 0;
-}
-
 #define IMAGEAUTO_DEMUXER(imgname, codecid)\
 static const AVClass imgname ## _class = {\
     .class_name = AV_STRINGIFY(imgname) " demuxer",\
@@ -991,7 +982,6 @@ IMAGEAUTO_DEMUXER(bmp,     AV_CODEC_ID_BMP)
 IMAGEAUTO_DEMUXER(dds,     AV_CODEC_ID_DDS)
 IMAGEAUTO_DEMUXER(dpx,     AV_CODEC_ID_DPX)
 IMAGEAUTO_DEMUXER(exr,     AV_CODEC_ID_EXR)
-IMAGEAUTO_DEMUXER(fits,    AV_CODEC_ID_FITS)
 IMAGEAUTO_DEMUXER(j2k,     AV_CODEC_ID_JPEG2000)
 IMAGEAUTO_DEMUXER(jpeg,    AV_CODEC_ID_MJPEG)
 IMAGEAUTO_DEMUXER(jpegls,  AV_CODEC_ID_JPEGLS)

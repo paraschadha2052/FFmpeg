@@ -173,6 +173,7 @@ OBJS-$(CONFIG_FLAC_MUXER)                += flacenc.o flacenc_header.o \
                                             vorbiscomment.o
 OBJS-$(CONFIG_FLIC_DEMUXER)              += flic.o
 OBJS-$(CONFIG_FLV_DEMUXER)               += flvdec.o
+OBJS-$(CONFIG_FITS_DEMUXER)              += fitsdec.o
 OBJS-$(CONFIG_LIVE_FLV_DEMUXER)          += flvdec.o
 OBJS-$(CONFIG_FLV_MUXER)                 += flvenc.o avc.o
 OBJS-$(CONFIG_FOURXM_DEMUXER)            += 4xm.o
@@ -223,7 +224,6 @@ OBJS-$(CONFIG_IMAGE_BMP_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_DDS_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_DPX_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_EXR_PIPE_DEMUXER)     += img2dec.o img2.o
-OBJS-$(CONFIG_IMAGE_FITS_PIPE_DEMUXER)    += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_J2K_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_JPEG_PIPE_DEMUXER)    += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_JPEGLS_PIPE_DEMUXER)  += img2dec.o img2.o

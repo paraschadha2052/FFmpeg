@@ -43,6 +43,7 @@ typedef struct FITSContext {
     int naxis;
     int naxisn[3];
     int rgb; /**< 1 if file contains RGB image, 0 otherwise */
+    int xtension;
     double bscale;
     double bzero;
     double data_min;
@@ -185,15 +186,18 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
     if (end - ptr8 < 80)
         return AVERROR_INVALIDDATA;
 
-    if (sscanf(ptr8, "SIMPLE = %c", &header->simple) != 1) {
-        av_log(avctx, AV_LOG_ERROR, "missing SIMPLE keyword\n");
-        return AVERROR_INVALIDDATA;
-    }
-
-    if (header->simple == 'F') {
-        av_log(avctx, AV_LOG_WARNING, "not a standard FITS file\n");
-    } else if (header->simple != 'T') {
-        av_log(avctx, AV_LOG_ERROR, "invalid SIMPLE value, SIMPLE = %c\n", header->simple);
+    if (sscanf(ptr8, "SIMPLE = %c", &header->simple) == 1) {
+        if (header->simple == 'F') {
+            av_log(avctx, AV_LOG_WARNING, "not a standard FITS file\n");
+        } else if (header->simple != 'T') {
+            av_log(avctx, AV_LOG_ERROR, "invalid SIMPLE value, SIMPLE = %c\n", header->simple);
+            return AVERROR_INVALIDDATA;
+        }
+        header->xtension = 0;
+    } else if (!strncmp(ptr8, "XTENSION= 'IMAGE", 16)) {
+        header->xtension = 1;
+    } else {
+        av_log(avctx, AV_LOG_ERROR, "missing SIMPLE keyword or invalid XTENSION\n");
         return AVERROR_INVALIDDATA;
     }
 
