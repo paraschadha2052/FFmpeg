@@ -62,9 +62,9 @@ static int fits_read_header(AVFormatContext *s)
 
 static int64_t find_size(AVIOContext * pb, FITSContext * fits)
 {
-    int bitpix, naxis, dim_no, temp, i;
-    int64_t header_size = 0, data_size=0, ret;
-    char buf[80];
+    int bitpix, naxis, dim_no, i, naxisn[999], groups=0;
+    int64_t header_size = 0, data_size=0, ret, pcount=0, gcount=1, d;
+    char buf[80], c;
 
     if((ret = avio_read(pb, buf, 80)) != 80)
         return AVERROR_EOF;
@@ -84,16 +84,13 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
         return AVERROR_EOF;
     if (sscanf(buf, "NAXIS = %d", &naxis) != 1)
         return AVERROR_INVALIDDATA;
-    if(naxis != 0)
-        data_size = abs(bitpix) >> 3;
     header_size += 80;
 
     for (i = 0; i < naxis; i++) {
         if((ret = avio_read(pb, buf, 80)) != 80)
             return AVERROR_EOF;
-        if (sscanf(buf, "NAXIS%d = %d", &dim_no, &temp) != 2 || dim_no != i+1)
+        if (sscanf(buf, "NAXIS%d = %d", &dim_no, &naxisn[i]) != 2 || dim_no != i+1)
             return AVERROR_INVALIDDATA;
-        data_size *= temp;
         header_size += 80;
     }
 
@@ -102,12 +99,42 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     header_size += 80;
 
     while (strncmp(buf, "END", 3)) {
+        if (sscanf(buf, "PCOUNT = %ld", &d) == 1) {
+            pcount = d;
+        } else if (sscanf(buf, "GCOUNT = %ld", &d) == 1) {
+            gcount = d;
+        } else if (sscanf(buf, "GROUPS = %c", &c) == 1) {
+            if (c == 'T') {
+                groups = 1;
+            }
+        }
+
         if((ret = avio_read(pb, buf, 80)) != 80)
             return AVERROR_EOF;
         header_size += 80;
     }
 
     header_size = ceil(header_size/2880.0)*2880;
+
+    if(groups) {
+        fits->image = 0;
+        if (naxis > 1)
+            data_size = 1;
+        for(i = 1; i < naxis; i++) {
+            data_size *= naxisn[i];
+        }
+    } else if (naxis) {
+        data_size = 1;
+        for(i = 0; i < naxis; i++) {
+            data_size *= naxisn[i];
+        }
+    } else {
+        fits->image = 0;
+    }
+
+    data_size += pcount;
+    data_size *= (abs(bitpix) >> 3) * gcount;
+
     if(data_size == 0)
         fits->image = 0;
     else
