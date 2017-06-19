@@ -24,7 +24,6 @@
  * FITS image decoder
  * It supports all 2-d images alongwith, bzero, bscale and blank keywords.
  * RGBA images are supported as NAXIS3 = 3 or 4 i.e. Planes in RGBA order. Also CTYPE = 'RGB ' should be present.
- * It currently does not support XTENSION keyword.
  * Also to interpret data, values are linearly scaled using min-max scaling but not RGB images.
  */
 

@@ -66,35 +66,36 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     int64_t header_size = 0, data_size=0, ret, pcount=0, gcount=1, d;
     char buf[80], c;
 
-    if((ret = avio_read(pb, buf, 80)) != 80)
+    if ((ret = avio_read(pb, buf, 80)) != 80)
         return AVERROR_EOF;
-    if(!strncmp(buf, "SIMPLE", 6) || !strncmp(buf, "XTENSION= 'IMAGE", 16))
+    if (!strncmp(buf, "SIMPLE", 6) || !strncmp(buf, "XTENSION= 'IMAGE", 16)) {
         fits->image = 1;
-    else
+    } else {
         fits->image = 0;
+    }
     header_size += 80;
 
-    if((ret = avio_read(pb, buf, 80)) != 80)
+    if ((ret = avio_read(pb, buf, 80)) != 80)
         return AVERROR_EOF;
     if (sscanf(buf, "BITPIX = %d", &bitpix) != 1)
         return AVERROR_INVALIDDATA;
     header_size += 80;
 
-    if((ret = avio_read(pb, buf, 80)) != 80)
+    if ((ret = avio_read(pb, buf, 80)) != 80)
         return AVERROR_EOF;
     if (sscanf(buf, "NAXIS = %d", &naxis) != 1)
         return AVERROR_INVALIDDATA;
     header_size += 80;
 
     for (i = 0; i < naxis; i++) {
-        if((ret = avio_read(pb, buf, 80)) != 80)
+        if ((ret = avio_read(pb, buf, 80)) != 80)
             return AVERROR_EOF;
         if (sscanf(buf, "NAXIS%d = %d", &dim_no, &naxisn[i]) != 2 || dim_no != i+1)
             return AVERROR_INVALIDDATA;
         header_size += 80;
     }
 
-    if((ret = avio_read(pb, buf, 80)) != 80)
+    if ((ret = avio_read(pb, buf, 80)) != 80)
         return AVERROR_EOF;
     header_size += 80;
 
@@ -109,23 +110,23 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
             }
         }
 
-        if((ret = avio_read(pb, buf, 80)) != 80)
+        if ((ret = avio_read(pb, buf, 80)) != 80)
             return AVERROR_EOF;
         header_size += 80;
     }
 
     header_size = ceil(header_size/2880.0)*2880;
 
-    if(groups) {
+    if (groups) {
         fits->image = 0;
         if (naxis > 1)
             data_size = 1;
-        for(i = 1; i < naxis; i++) {
+        for (i = 1; i < naxis; i++) {
             data_size *= naxisn[i];
         }
     } else if (naxis) {
         data_size = 1;
-        for(i = 0; i < naxis; i++) {
+        for (i = 0; i < naxis; i++) {
             data_size *= naxisn[i];
         }
     } else {
@@ -135,10 +136,11 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     data_size += pcount;
     data_size *= (abs(bitpix) >> 3) * gcount;
 
-    if(data_size == 0)
+    if (!data_size) {
         fits->image = 0;
-    else
+    } else {
         data_size = ceil(data_size/2880.0)*2880;
+    }
 
     return header_size + data_size;
 }
@@ -150,19 +152,19 @@ static int fits_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     fits->image = 0;
     pos = avio_tell(s->pb);
-    while(!fits->image) {
-        if((ret = avio_seek(s->pb, pos+size, SEEK_SET)) < 0)
+    while (!fits->image) {
+        if ((ret = avio_seek(s->pb, pos+size, SEEK_SET)) < 0)
             return ret;
 
         if (avio_feof(s->pb))
             return AVERROR_EOF;
 
         pos = avio_tell(s->pb);
-        if((size = find_size(s->pb, fits)) < 0)
+        if ((size = find_size(s->pb, fits)) < 0)
             return size;
     }
 
-    if((ret = avio_seek(s->pb, pos, SEEK_SET)) < 0)
+    if ((ret = avio_seek(s->pb, pos, SEEK_SET)) < 0)
         return ret;
 
     ret = av_get_packet(s->pb, pkt, size);
