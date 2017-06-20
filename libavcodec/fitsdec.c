@@ -31,6 +31,7 @@
 #include "internal.h"
 #include <float.h>
 #include "libavutil/intreadwrite.h"
+#include "libavutil/intfloat.h"
 
 /**
  * Structure to store the header keywords in FITS file
@@ -69,12 +70,9 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
     header->data_max = DBL_MIN;
     switch (header->bitpix) {
         case -64:
-            t64 = AV_RB64(ptr8);
-            memcpy(&tdbl, &t64, 8);
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
-                    t64 = AV_RB64(ptr8);
-                    memcpy(&tdbl, &t64, 8);
+                    tdbl = av_int2double(AV_RB64(ptr8));
                     if (tdbl > header->data_max)
                         header->data_max = tdbl;
                     if (tdbl < header->data_min)
@@ -84,12 +82,9 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
             }
             break;
         case -32:
-            t32 = AV_RB32(ptr8);
-            memcpy(&tflt, &t32, 4);
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
-                    t32 = AV_RB32(ptr8);
-                    memcpy(&tflt, &t32, 4);
+                    tflt = av_int2float(AV_RB32(ptr8));
                     if (tflt > header->data_max)
                         header->data_max = tflt;
                     if (tflt < header->data_min)
@@ -112,7 +107,6 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
             }
             break;
         case 16:
-            t16 = AV_RB16(ptr8);
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t16 = AV_RB16(ptr8);
@@ -127,7 +121,6 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
             }
             break;
         case 32:
-            t32 = AV_RB32(ptr8);
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t32 = AV_RB32(ptr8);
@@ -142,7 +135,6 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
             }
             break;
         case 64:
-            t64 = AV_RB64(ptr8);
             for (i = 0; i < header->naxisn[1]; i++) {
                 for (j = 0; j < header->naxisn[0]; j++) {
                     t64 = AV_RB64(ptr8);
@@ -477,8 +469,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    t32 = AV_RB32(ptr8);
-                    memcpy(&tflt, &t32, 4);
+                    tflt = av_int2float(AV_RB32(ptr8));
                     *dst16++ = ((tflt - header->data_min) * 65535) / (header->data_max - header->data_min);
                     ptr8 += 4;
                 }
@@ -487,8 +478,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    t64 = AV_RB64(ptr8);
-                    memcpy(&tdbl, &t64, 8);
+                    tdbl = av_int2double(AV_RB64(ptr8));
                     *dst16++ = ((tdbl - header->data_min) * 65535) / (header->data_max - header->data_min);
                     ptr8 += 8;
                 }
