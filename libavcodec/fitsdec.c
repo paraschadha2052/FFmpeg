@@ -39,7 +39,7 @@
 typedef struct FITSContext {
     char simple;
     int bitpix;
-    int blank;
+    int64_t blank;
     int naxis;
     int naxisn[3];
     int rgb; /**< 1 if file contains RGB image, 0 otherwise */
@@ -169,7 +169,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
     uint64_t size=1;
     double d;
 
-    header->blank = 0;
+    header->blank = LLONG_MIN;
     header->bscale = 1.0;
     header->bzero = 0;
     header->rgb = 0;
@@ -427,7 +427,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     if (ptr8[0] != header->blank) {
                         *dst8++ = ((ptr8[0] - header->data_min) * 255) / (header->data_max - header->data_min);
                     } else {
-                        *dst8++ = ptr8[0];
+                        *dst8++ = 0;
                     }
                     ptr8++;
                 }
@@ -437,8 +437,11 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t16 = AV_RB16(ptr8);
-                    if (t16 != header->blank)
+                    if (t16 != header->blank) {
                         t16 = ((t16 - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    } else {
+                        t16 = 0;
+                    }
                     *dst16++ = t16;
                     ptr8 += 2;
                 }
@@ -448,8 +451,11 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t32 = AV_RB32(ptr8);
-                    if (t32 != header->blank)
+                    if (t32 != header->blank) {
                         t16 = ((t32 - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    } else {
+                        t16 = 0;
+                    }
                     *dst16++ = t16;
                     ptr8 += 4;
                 }
@@ -459,8 +465,11 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t64 = AV_RB64(ptr8);
-                    if (t64 != header->blank)
+                    if (t64 != header->blank) {
                         t16 = ((t64 - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    } else {
+                        t16 = 0;
+                    }
                     *dst16++ = t16;
                     ptr8 += 8;
                 }
