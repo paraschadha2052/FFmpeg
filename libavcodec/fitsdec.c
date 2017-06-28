@@ -32,6 +32,7 @@
 #include <float.h>
 #include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat.h"
+#include "libavutil/dict.h"
 
 /**
  * Structure to store the header keywords in FITS file
@@ -162,12 +163,15 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
  * @param end - pointer to end of packet
  * @return 1, if calculated successfully, otherwise AVERROR_INVALIDDATA
  */
-static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecContext * header, const uint8_t * end)
+static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecContext * header,
+                            const uint8_t * end, AVDictionary **meta)
 {
     const uint8_t *ptr8 = *ptr;
     int lines_read = 0, i, dim_no, t, data_min_found = 0, data_max_found = 0, ret;
     uint64_t size=1;
     double d;
+    AVDictionary *metadata = NULL;
+    char keyword[10], value[72];
 
     header->blank = LLONG_MIN;
     header->bscale = 1.0;
@@ -180,13 +184,17 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
     if (sscanf(ptr8, "SIMPLE = %c", &header->simple) == 1) {
         if (header->simple == 'F') {
             av_log(avctx, AV_LOG_WARNING, "not a standard FITS file\n");
+            av_dict_set(&metadata, "SIMPLE", "F", 0);
         } else if (header->simple != 'T') {
             av_log(avctx, AV_LOG_ERROR, "invalid SIMPLE value, SIMPLE = %c\n", header->simple);
             return AVERROR_INVALIDDATA;
+        } else {
+            av_dict_set(&metadata, "SIMPLE", "T", 0);
         }
         header->xtension = 0;
     } else if (!strncmp(ptr8, "XTENSION= 'IMAGE", 16)) {
         header->xtension = 1;
+        av_dict_set(&metadata, "XTENSION", "'IMAGE   '", 0);
     } else {
         av_log(avctx, AV_LOG_ERROR, "missing SIMPLE keyword or invalid XTENSION\n");
         return AVERROR_INVALIDDATA;
@@ -203,6 +211,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
         return AVERROR_INVALIDDATA;
     }
 
+    av_dict_set_int(&metadata, "BITPIX", header->bitpix, 0);
     size = abs(header->bitpix) >> 3;
     ptr8 += 80;
     lines_read++;
@@ -225,6 +234,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
         return AVERROR_INVALIDDATA;
     }
 
+    av_dict_set_int(&metadata, "NAXIS", header->naxis, 0);
     ptr8 += 80;
     lines_read++;
 
@@ -237,6 +247,8 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
             return AVERROR_INVALIDDATA;
         }
 
+        sprintf(keyword, "NAXIS%d", dim_no);
+        av_dict_set_int(&metadata, keyword, header->naxisn[i], 0);
         size *= header->naxisn[i];
         ptr8 += 80;
         lines_read++;
@@ -265,6 +277,51 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
                 return AVERROR_INVALIDDATA;
             }
         }
+
+        if (ptr8[8] == '=') {
+            for (i = 0; i < 8 && ptr8[i] != ' '; i++) {
+                keyword[i] = ptr8[i];
+            }
+            keyword[i] = '\0';
+
+            t = 0;
+            i = 10;
+            while (i < 80 && ptr8[i] == ' ')
+                i++;
+
+            if (i < 80) {
+                value[t] = ptr8[i];
+                i++;
+                t++;
+                if (ptr8[i-1] == '\'') {
+                    while (i < 80 && ptr8[i] != '\'') {
+                        value[t] = ptr8[i];
+                        i++;
+                        t++;
+                    }
+                    value[t] = '\'';
+                    t++;
+                } else if (ptr8[i-1] == '(') {
+                    while (i < 80 && ptr8[i] != ')') {
+                        value[t] = ptr8[i];
+                        i++;
+                        t++;
+                    }
+                    value[t] = ')';
+                    t++;
+                } else {
+                    while (i < 80 && ptr8[i] != ' ' && ptr8[i] != '/') {
+                        value[t] = ptr8[i];
+                        i++;
+                        t++;
+                    }
+                }
+            }
+
+            value[t] = '\0';
+            av_dict_set(&metadata, keyword, value, 0);
+        }
+
         ptr8 += 80;
         lines_read++;
 
@@ -303,6 +360,8 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
         header->data_min = (header->data_min - header->bzero) / header->bscale;
         header->data_max = (header->data_max - header->bzero) / header->bscale;
     }
+
+    *meta = metadata;
     return 1;
 }
 
@@ -323,7 +382,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     FITSDecContext * header = avctx->priv_data;
 
     end = ptr8 + avpkt->size;
-    if (ret = fits_read_header(avctx, &ptr8, header, end) < 0)
+    if (ret = fits_read_header(avctx, &ptr8, header, end, &p->metadata) < 0)
         return ret;
 
     size = (header->naxisn[0]) * (header->naxisn[1]);
