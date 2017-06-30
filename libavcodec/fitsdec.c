@@ -247,7 +247,11 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
             return AVERROR_INVALIDDATA;
         }
 
-        sprintf(keyword, "NAXIS%d", dim_no);
+        ret = snprintf(keyword, 10, "NAXIS%d", dim_no);
+        if (ret < 0 || ret >= 10) {
+            return AVERROR_INVALIDDATA;
+        }
+
         av_dict_set_int(&metadata, keyword, header->naxisn[i], 0);
         size *= header->naxisn[i];
         ptr8 += 80;
@@ -382,7 +386,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     FITSDecContext * header = avctx->priv_data;
 
     end = ptr8 + avpkt->size;
-    if (ret = fits_read_header(avctx, &ptr8, header, end, &p->metadata) < 0)
+    if ((ret = fits_read_header(avctx, &ptr8, header, end, &p->metadata)) < 0)
         return ret;
 
     size = (header->naxisn[0]) * (header->naxisn[1]);
