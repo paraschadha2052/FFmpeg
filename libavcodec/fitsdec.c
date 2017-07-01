@@ -327,6 +327,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
 {
     AVFrame *p=data;
     const uint8_t *ptr8 = avpkt->data, *end;
+    uint8_t t8;
     int16_t t16;
     int32_t t32;
     int64_t t64;
@@ -379,7 +380,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 for (j = 0; j < avctx->width; j++) {
                     if (header.naxisn[2] == 4) {
                         t = ptr8[size * 3];
-                        if (t != header.blank) {
+                        if (!header.blank_found || t != header.blank) {
                             t = t * header.bscale + header.bzero;
                         } else {
                             t = 0;
@@ -390,7 +391,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     }
 
                     t = ptr8[0];
-                    if (t != header.blank) {
+                    if (!header.blank_found || t != header.blank) {
                         t = t * header.bscale + header.bzero;
                     } else {
                         t = 0;
@@ -398,7 +399,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     r = t << 16;
 
                     t = ptr8[size];
-                    if (t != header.blank) {
+                    if (!header.blank_found || t != header.blank) {
                         t = t * header.bscale + header.bzero;
                     } else {
                         t = 0;
@@ -406,7 +407,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     g = t << 8;
 
                     t = ptr8[size * 2];
-                    if (t != header.blank) {
+                    if (!header.blank_found || t != header.blank) {
                         t = t * header.bscale + header.bzero;
                     } else {
                         t = 0;
@@ -425,7 +426,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
 
                     if (header.naxisn[2] == 4) {
                         t = ((ptr8[size * 3] << 8) | ptr8[size * 3 + 1]);
-                        if (t != header.blank) {
+                        if (!header.blank_found || t != header.blank) {
                             t = t * header.bscale + header.bzero;
                         } else {
                             t = 0;
@@ -436,7 +437,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     }
 
                     t = ptr8[0] << 8 | ptr8[1];
-                    if (t != header.blank) {
+                    if (!header.blank_found || t != header.blank) {
                         t = t * header.bscale + header.bzero;
                     } else {
                         t = 0;
@@ -444,7 +445,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     r = t << 32;
 
                     t = ptr8[size] << 8 | ptr8[size + 1];
-                    if (t != header.blank) {
+                    if (!header.blank_found || t != header.blank) {
                         t = t * header.bscale + header.bzero;
                     } else {
                         t = 0;
@@ -452,7 +453,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     g = t << 16;
 
                     t = ptr8[size * 2] << 8 | ptr8[size * 2 + 1];
-                    if (t != header.blank) {
+                    if (!header.blank_found || t != header.blank) {
                         t = t * header.bscale + header.bzero;
                     } else {
                         t = 0;
@@ -469,12 +470,14 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             for (i = 0; i < avctx->height; i++) {
                 dst8 = (uint8_t *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    if (ptr8[0] != header.blank) {
-                        *dst8++ = ((ptr8[0] - header.data_min) * 255) / (header.data_max - header.data_min);
+                    t8 = ptr8[0];
+                    if (!header.blank_found || t8 != header.blank) {
+                        t8 = ((t8 - header.data_min) * 255) / (header.data_max - header.data_min);
                     } else {
-                        *dst8++ = 0;
+                        t8 = 0;
                     }
-                    ptr8++;
+                    *dst8++ = t8;
+                    ptr8 += 1;
                 }
             }
         } else if (header.bitpix == 16) {
@@ -482,7 +485,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t16 = AV_RB16(ptr8);
-                    if (t16 != header.blank) {
+                    if (!header.blank_found || t16 != header.blank) {
                         t16 = ((t16 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     } else {
                         t16 = 0;
@@ -496,7 +499,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t32 = AV_RB32(ptr8);
-                    if (t32 != header.blank) {
+                    if (!header.blank_found || t32 != header.blank) {
                         t16 = ((t32 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     } else {
                         t16 = 0;
@@ -510,7 +513,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t64 = AV_RB64(ptr8);
-                    if (t64 != header.blank) {
+                    if (!header.blank_found || t64 != header.blank) {
                         t16 = ((t64 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     } else {
                         t16 = 0;
@@ -524,7 +527,12 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     tflt = av_int2float(AV_RB32(ptr8));
-                    *dst16++ = ((tflt - header.data_min) * 65535) / (header.data_max - header.data_min);
+                    if (!header.blank_found || tflt != header.blank) {
+                        tflt = ((tflt - header.data_min) * 65535) / (header.data_max - header.data_min);
+                    } else {
+                        tflt = 0;
+                    }
+                    *dst16++ = tflt;
                     ptr8 += 4;
                 }
             }
@@ -533,7 +541,12 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     tdbl = av_int2double(AV_RB64(ptr8));
-                    *dst16++ = ((tdbl - header.data_min) * 65535) / (header.data_max - header.data_min);
+                    if (!header.blank_found || tdbl != header.blank) {
+                        tdbl = ((tdbl - header.data_min) * 65535) / (header.data_max - header.data_min);
+                    } else {
+                        tdbl = 0;
+                    }
+                    *dst16++ = tdbl;
                     ptr8 += 8;
                 }
             }
