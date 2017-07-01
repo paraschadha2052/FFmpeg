@@ -22,7 +22,10 @@
 /**
  * @file
  * FITS image decoder
- * It supports all 2-d images alongwith, bzero, bscale and blank keywords.
+ *
+ * Specification: https://fits.gsfc.nasa.gov/fits_standard.html Version 3.0
+ *
+ * Support all 2-d images alongwith, bzero, bscale and blank keywords.
  * RGBA images are supported as NAXIS3 = 3 or 4 i.e. Planes in RGBA order. Also CTYPE = 'RGB ' should be present.
  * Also to interpret data, values are linearly scaled using min-max scaling but not RGB images.
  */
@@ -52,11 +55,11 @@ typedef struct FITSContext {
 } FITSDecContext;
 
 /**
- * function calculates the data_min and data_max values from the data.
+ * Calculate the data_min and data_max values from the data.
  * This is called if the values are not present in the header.
- * @param ptr8 - pointer to the data
- * @param header - pointer to the header
- * @return 1, if calculated successfully, otherwise AVERROR_INVALIDDATA
+ * @param ptr8 pointer to the data
+ * @param header pointer to the header
+ * @return 1 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
 static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, const uint8_t * end)
 {
@@ -156,12 +159,12 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
 }
 
 /**
- * function reads the fits header and stores the values in FITSDecContext pointed by header
- * @param avctx - AVCodec context
- * @param ptr - pointer to pointer to the data
- * @param header - pointer to the FITSDecContext
- * @param end - pointer to end of packet
- * @return 1, if calculated successfully, otherwise AVERROR_INVALIDDATA
+ * Read the fits header and store the values in FITSDecContext pointed by header
+ * @param avctx AVCodec context
+ * @param ptr pointer to pointer to the data
+ * @param header pointer to the FITSDecContext
+ * @param end pointer to end of packet
+ * @return 1 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
 static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecContext * header,
                             const uint8_t * end, AVDictionary **meta)
@@ -259,7 +262,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecC
     }
 
     if (end - ptr8 < 80)
-            return AVERROR_INVALIDDATA;
+        return AVERROR_INVALIDDATA;
 
     while (strncmp(ptr8, "END", 3)) {
         if (sscanf(ptr8, "BLANK = %d", &t) == 1) {
