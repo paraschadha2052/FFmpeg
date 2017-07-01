@@ -59,7 +59,7 @@ typedef struct FITSHeader {
  * This is called if the values are not present in the header.
  * @param ptr8 pointer to the data
  * @param header pointer to the header
- * @return 1 if calculated successfully otherwise AVERROR_INVALIDDATA
+ * @return 0 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
 static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const uint8_t * end)
 {
@@ -155,7 +155,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const ui
         default:
             return AVERROR_INVALIDDATA;
     }
-    return 1;
+    return 0;
 }
 
 /**
@@ -164,7 +164,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const ui
  * @param ptr pointer to pointer to the data
  * @param header pointer to the FITSHeader
  * @param end pointer to end of packet
- * @return 1 if calculated successfully otherwise AVERROR_INVALIDDATA
+ * @return 0 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
 static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHeader * header,
                             const uint8_t * end, AVDictionary **meta)
@@ -369,7 +369,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
     }
 
     *meta = metadata;
-    return 1;
+    return 0;
 }
 
 static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
