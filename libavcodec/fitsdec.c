@@ -439,94 +439,33 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             case_rgb(16, dst64, uint64_t, AV_RB16);
         }
     } else {
-        if (header.bitpix == 8) {
-            for (i = 0; i < avctx->height; i++) {
+        switch (header.bitpix) {
+        #define case_gray(cas, dst, type, t, rd) \
+            case cas: \
+                for (i = 0; i < avctx->height; i++) { \
+                    dst = (type *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]); \
+                    for (j = 0; j < avctx->width; j++) { \
+                        t = rd; \
+                        if (!header.blank_found || t != header.blank) { \
+                            t = ((t - header.data_min) * ((1 << (sizeof(type) * 8)) - 1)) / (header.data_max - header.data_min); \
+                        } else { \
+                            t = 0; \
+                        } \
+                        *dst++ = (type) t; \
+                        ptr8 += abs(cas)/8; \
+                    } \
+                } \
+                break
 
-                dst8 = (uint8_t *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]);
-                for (j = 0; j < avctx->width; j++) {
-                    t8 = ptr8[0];
-                    if (!header.blank_found || t8 != header.blank) {
-                        t8 = ((t8 - header.data_min) * 255) / (header.data_max - header.data_min);
-                    } else {
-                        t8 = 0;
-                    }
-                    *dst8++ = t8;
-                    ptr8 += 1;
-                }
-            }
-        } else if (header.bitpix == 16) {
-            for (i = 0; i < avctx->height; i++) {
-                dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
-                for (j = 0; j < avctx->width; j++) {
-                    t16 = AV_RB16(ptr8);
-                    if (!header.blank_found || t16 != header.blank) {
-                        t16 = ((t16 - header.data_min) * 65535) / (header.data_max - header.data_min);
-                    } else {
-                        t16 = 0;
-                    }
-                    *dst16++ = t16;
-                    ptr8 += 2;
-                }
-            }
-        } else if (header.bitpix == 32) {
-            for (i = 0; i < avctx->height; i++) {
-                dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
-                for (j = 0; j < avctx->width; j++) {
-                    t32 = AV_RB32(ptr8);
-                    if (!header.blank_found || t32 != header.blank) {
-                        t16 = ((t32 - header.data_min) * 65535) / (header.data_max - header.data_min);
-                    } else {
-                        t16 = 0;
-                    }
-                    *dst16++ = t16;
-                    ptr8 += 4;
-                }
-            }
-        } else if (header.bitpix == 64) {
-            for (i = 0; i < avctx->height; i++) {
-                dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
-                for (j = 0; j < avctx->width; j++) {
-                    t64 = AV_RB64(ptr8);
-                    if (!header.blank_found || t64 != header.blank) {
-                        t16 = ((t64 - header.data_min) * 65535) / (header.data_max - header.data_min);
-                    } else {
-                        t16 = 0;
-                    }
-                    *dst16++ = t16;
-                    ptr8 += 8;
-                }
-            }
-        } else if (header.bitpix == -32) {
-            for (i = 0; i < avctx->height; i++) {
-                dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
-                for (j = 0; j < avctx->width; j++) {
-                    tflt = av_int2float(AV_RB32(ptr8));
-                    if (!header.blank_found || tflt != header.blank) {
-                        tflt = ((tflt - header.data_min) * 65535) / (header.data_max - header.data_min);
-                    } else {
-                        tflt = 0;
-                    }
-                    *dst16++ = tflt;
-                    ptr8 += 4;
-                }
-            }
-        } else if (header.bitpix == -64) {
-            for (i = 0; i < avctx->height; i++) {
-                dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
-                for (j = 0; j < avctx->width; j++) {
-                    tdbl = av_int2double(AV_RB64(ptr8));
-                    if (!header.blank_found || tdbl != header.blank) {
-                        tdbl = ((tdbl - header.data_min) * 65535) / (header.data_max - header.data_min);
-                    } else {
-                        tdbl = 0;
-                    }
-                    *dst16++ = tdbl;
-                    ptr8 += 8;
-                }
-            }
-        } else {
-            av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header.bitpix);
-            return AVERROR_INVALIDDATA;
+            case_gray(-64, dst16, uint16_t, tdbl, av_int2double(AV_RB64(ptr8)));
+            case_gray(-32, dst16, uint16_t, tflt, av_int2float(AV_RB32(ptr8)));
+            case_gray(8, dst8, uint8_t, t8, ptr8[0]);
+            case_gray(16, dst16, uint16_t, t16, AV_RB16(ptr8));
+            case_gray(32, dst16, uint16_t, t32, AV_RB32(ptr8));
+            case_gray(64, dst16, uint16_t, t64, AV_RB64(ptr8));
+            default:
+                av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header.bitpix);
+                return AVERROR_INVALIDDATA;
         }
     }
 
