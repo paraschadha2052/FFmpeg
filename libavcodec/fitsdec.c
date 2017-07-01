@@ -25,7 +25,7 @@
  *
  * Specification: https://fits.gsfc.nasa.gov/fits_standard.html Version 3.0
  *
- * Support all 2-d images alongwith, bzero, bscale and blank keywords.
+ * Support all 2d images alongwith, bzero, bscale and blank keywords.
  * RGBA images are supported as NAXIS3 = 3 or 4 i.e. Planes in RGBA order. Also CTYPE = 'RGB ' should be present.
  * Also to interpret data, values are linearly scaled using min-max scaling but not RGB images.
  */
@@ -427,23 +427,39 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                 dst32 = (uint32_t *)(p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     if (header.naxisn[2] == 4) {
-                        if (ptr8[size * 3] != header.blank)
-                            t = ptr8[size * 3] * header.bscale + header.bzero;
+                        t = ptr8[size * 3];
+                        if (t != header.blank) {
+                            t = t * header.bscale + header.bzero;
+                        } else {
+                            t = 0;
+                        }
                         a = t << 24;
                     } else {
                         a = (255 << 24);
                     }
 
-                    if (ptr8[0] != header.blank)
-                        t = ptr8[0] * header.bscale + header.bzero;
+                    t = ptr8[0];
+                    if (t != header.blank) {
+                        t = t * header.bscale + header.bzero;
+                    } else {
+                        t = 0;
+                    }
                     r = t << 16;
 
-                    if (ptr8[size] != header.blank)
-                        t = ptr8[size] * header.bscale + header.bzero;
+                    t = ptr8[size];
+                    if (t != header.blank) {
+                        t = t * header.bscale + header.bzero;
+                    } else {
+                        t = 0;
+                    }
                     g = t << 8;
 
-                    if (ptr8[size * 2] != header.blank)
-                        t = ptr8[size * 2] * header.bscale + header.bzero;
+                    t = ptr8[size * 2];
+                    if (t != header.blank) {
+                        t = t * header.bscale + header.bzero;
+                    } else {
+                        t = 0;
+                    }
                     b = t;
 
                     *dst32++ = ((uint32_t)a) | ((uint32_t)r) | ((uint32_t)g) | ((uint32_t)b);
@@ -458,26 +474,38 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
 
                     if (header.naxisn[2] == 4) {
                         t = ((ptr8[size * 3] << 8) | ptr8[size * 3 + 1]);
-                        if (t != header.blank)
-                            t = t*header.bscale + header.bzero;
+                        if (t != header.blank) {
+                            t = t * header.bscale + header.bzero;
+                        } else {
+                            t = 0;
+                        }
                         a = t << 48;
                     } else {
                         a = 65535ULL << 48;
                     }
 
                     t = ptr8[0] << 8 | ptr8[1];
-                    if (t != header.blank)
-                        t = t*header.bscale + header.bzero;
+                    if (t != header.blank) {
+                        t = t * header.bscale + header.bzero;
+                    } else {
+                        t = 0;
+                    }
                     r = t << 32;
 
                     t = ptr8[size] << 8 | ptr8[size + 1];
-                    if (t != header.blank)
-                        t = t*header.bscale + header.bzero;
+                    if (t != header.blank) {
+                        t = t * header.bscale + header.bzero;
+                    } else {
+                        t = 0;
+                    }
                     g = t << 16;
 
                     t = ptr8[size * 2] << 8 | ptr8[size * 2 + 1];
-                    if (t != header.blank)
-                        t = t*header.bscale + header.bzero;
+                    if (t != header.blank) {
+                        t = t * header.bscale + header.bzero;
+                    } else {
+                        t = 0;
+                    }
                     b = t;
 
                     *dst64++ = a | r | g | b;
