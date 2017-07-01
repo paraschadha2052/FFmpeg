@@ -167,8 +167,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
 {
     const uint8_t *ptr8 = *ptr;
     int lines_read = 0, i, dim_no, data_min_found = 0, data_max_found = 0, ret;
-    int64_t t;
-    uint64_t size=1;
+    int64_t t, size = 1;
     double d;
     AVDictionary *metadata = NULL;
     char keyword[10], value[72];
@@ -260,6 +259,11 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
 
         av_dict_set(&metadata, keyword, value, 0);
         size *= header->naxisn[i];
+
+        if (size <= 0) {
+            av_log(avctx, AV_LOG_ERROR, "unsupported size of FITS image");
+            return AVERROR_INVALIDDATA;
+        }
     }
 
     if ((ret = read_keyword_value(ptr8, keyword, value, end)) < 0)
@@ -321,7 +325,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
     if (!header->rgb && (!data_min_found || !data_max_found)) {
         if ((ret = fill_data_min_max(ptr8, header, end)) < 0) {
             av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header->bitpix);
-            return AVERROR_INVALIDDATA;
+            return ret;
         }
     } else {
         /*
