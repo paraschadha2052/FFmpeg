@@ -40,7 +40,7 @@
 /**
  * Structure to store the header keywords in FITS file
  */
-typedef struct FITSContext {
+typedef struct FITSHeader {
     char simple;
     int bitpix;
     int64_t blank;
@@ -52,7 +52,7 @@ typedef struct FITSContext {
     double bzero;
     double data_min;
     double data_max;
-} FITSDecContext;
+} FITSHeader;
 
 /**
  * Calculate the data_min and data_max values from the data.
@@ -61,7 +61,7 @@ typedef struct FITSContext {
  * @param header pointer to the header
  * @return 1 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
-static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, const uint8_t * end)
+static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const uint8_t * end)
 {
     int16_t t16;
     int32_t t32;
@@ -159,14 +159,14 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSDecContext * header, cons
 }
 
 /**
- * Read the fits header and store the values in FITSDecContext pointed by header
+ * Read the fits header and store the values in FITSHeader pointed by header
  * @param avctx AVCodec context
  * @param ptr pointer to pointer to the data
- * @param header pointer to the FITSDecContext
+ * @param header pointer to the FITSHeader
  * @param end pointer to end of packet
  * @return 1 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
-static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSDecContext * header,
+static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHeader * header,
                             const uint8_t * end, AVDictionary **meta)
 {
     const uint8_t *ptr8 = *ptr;
@@ -386,39 +386,39 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     uint16_t *dst16;
     uint32_t *dst32;
     uint64_t *dst64, size, r, g, b, a, t;
-    FITSDecContext * header = avctx->priv_data;
+    FITSHeader header;
 
     end = ptr8 + avpkt->size;
-    if ((ret = fits_read_header(avctx, &ptr8, header, end, &p->metadata)) < 0)
+    if ((ret = fits_read_header(avctx, &ptr8, &header, end, &p->metadata)) < 0)
         return ret;
 
-    size = (header->naxisn[0]) * (header->naxisn[1]);
+    size = (header.naxisn[0]) * (header.naxisn[1]);
 
-    if (header->rgb) {
-        if (header->bitpix == 8) {
+    if (header.rgb) {
+        if (header.bitpix == 8) {
             avctx->pix_fmt = AV_PIX_FMT_RGB32;
-        } else if (header->bitpix == 16) {
+        } else if (header.bitpix == 16) {
             avctx->pix_fmt = AV_PIX_FMT_RGBA64;
         } else {
-            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX = %d\n", header->bitpix);
+            av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX = %d\n", header.bitpix);
             return AVERROR_INVALIDDATA;
         }
     } else {
-        if (header->bitpix == 8) {
+        if (header.bitpix == 8) {
             avctx->pix_fmt = AV_PIX_FMT_GRAY8;
         } else {
             avctx->pix_fmt = AV_PIX_FMT_GRAY16;
         }
     }
 
-    if ((ret = ff_set_dimensions(avctx, header->naxisn[0], header->naxisn[1])) < 0)
+    if ((ret = ff_set_dimensions(avctx, header.naxisn[0], header.naxisn[1])) < 0)
         return ret;
 
     if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
 
-    if (header->rgb) {
-        if (header->bitpix == 8) {
+    if (header.rgb) {
+        if (header.bitpix == 8) {
             for (i = 0; i < avctx->height; i++) {
                 /*
                  * FITS stores images with bottom row first. Therefore we have
@@ -426,58 +426,58 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                  */
                 dst32 = (uint32_t *)(p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    if (header->naxisn[2] == 4) {
-                        if (ptr8[size * 3] != header->blank)
-                            t = ptr8[size * 3] * header->bscale + header->bzero;
+                    if (header.naxisn[2] == 4) {
+                        if (ptr8[size * 3] != header.blank)
+                            t = ptr8[size * 3] * header.bscale + header.bzero;
                         a = t << 24;
                     } else {
                         a = (255 << 24);
                     }
 
-                    if (ptr8[0] != header->blank)
-                        t = ptr8[0] * header->bscale + header->bzero;
+                    if (ptr8[0] != header.blank)
+                        t = ptr8[0] * header.bscale + header.bzero;
                     r = t << 16;
 
-                    if (ptr8[size] != header->blank)
-                        t = ptr8[size] * header->bscale + header->bzero;
+                    if (ptr8[size] != header.blank)
+                        t = ptr8[size] * header.bscale + header.bzero;
                     g = t << 8;
 
-                    if (ptr8[size * 2] != header->blank)
-                        t = ptr8[size * 2] * header->bscale + header->bzero;
+                    if (ptr8[size * 2] != header.blank)
+                        t = ptr8[size * 2] * header.bscale + header.bzero;
                     b = t;
 
                     *dst32++ = ((uint32_t)a) | ((uint32_t)r) | ((uint32_t)g) | ((uint32_t)b);
                     ptr8++;
                 }
             }
-        } else if (header->bitpix == 16) {
+        } else if (header.bitpix == 16) {
             // not tested ....
             for (i = 0; i < avctx->height; i++) {
                 dst64 = (uint64_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
 
-                    if (header->naxisn[2] == 4) {
+                    if (header.naxisn[2] == 4) {
                         t = ((ptr8[size * 3] << 8) | ptr8[size * 3 + 1]);
-                        if (t != header->blank)
-                            t = t*header->bscale + header->bzero;
+                        if (t != header.blank)
+                            t = t*header.bscale + header.bzero;
                         a = t << 48;
                     } else {
                         a = 65535ULL << 48;
                     }
 
                     t = ptr8[0] << 8 | ptr8[1];
-                    if (t != header->blank)
-                        t = t*header->bscale + header->bzero;
+                    if (t != header.blank)
+                        t = t*header.bscale + header.bzero;
                     r = t << 32;
 
                     t = ptr8[size] << 8 | ptr8[size + 1];
-                    if (t != header->blank)
-                        t = t*header->bscale + header->bzero;
+                    if (t != header.blank)
+                        t = t*header.bscale + header.bzero;
                     g = t << 16;
 
                     t = ptr8[size * 2] << 8 | ptr8[size * 2 + 1];
-                    if (t != header->blank)
-                        t = t*header->bscale + header->bzero;
+                    if (t != header.blank)
+                        t = t*header.bscale + header.bzero;
                     b = t;
 
                     *dst64++ = a | r | g | b;
@@ -486,25 +486,25 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             }
         }
     } else {
-        if (header->bitpix == 8) {
+        if (header.bitpix == 8) {
             for (i = 0; i < avctx->height; i++) {
                 dst8 = (uint8_t *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
-                    if (ptr8[0] != header->blank) {
-                        *dst8++ = ((ptr8[0] - header->data_min) * 255) / (header->data_max - header->data_min);
+                    if (ptr8[0] != header.blank) {
+                        *dst8++ = ((ptr8[0] - header.data_min) * 255) / (header.data_max - header.data_min);
                     } else {
                         *dst8++ = 0;
                     }
                     ptr8++;
                 }
             }
-        } else if (header->bitpix == 16) {
+        } else if (header.bitpix == 16) {
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t16 = AV_RB16(ptr8);
-                    if (t16 != header->blank) {
-                        t16 = ((t16 - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    if (t16 != header.blank) {
+                        t16 = ((t16 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     } else {
                         t16 = 0;
                     }
@@ -512,13 +512,13 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     ptr8 += 2;
                 }
             }
-        } else if (header->bitpix == 32) {
+        } else if (header.bitpix == 32) {
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t32 = AV_RB32(ptr8);
-                    if (t32 != header->blank) {
-                        t16 = ((t32 - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    if (t32 != header.blank) {
+                        t16 = ((t32 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     } else {
                         t16 = 0;
                     }
@@ -526,13 +526,13 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     ptr8 += 4;
                 }
             }
-        } else if (header->bitpix == 64) {
+        } else if (header.bitpix == 64) {
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     t64 = AV_RB64(ptr8);
-                    if (t64 != header->blank) {
-                        t16 = ((t64 - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    if (t64 != header.blank) {
+                        t16 = ((t64 - header.data_min) * 65535) / (header.data_max - header.data_min);
                     } else {
                         t16 = 0;
                     }
@@ -540,26 +540,26 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                     ptr8 += 8;
                 }
             }
-        } else if (header->bitpix == -32) {
+        } else if (header.bitpix == -32) {
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     tflt = av_int2float(AV_RB32(ptr8));
-                    *dst16++ = ((tflt - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    *dst16++ = ((tflt - header.data_min) * 65535) / (header.data_max - header.data_min);
                     ptr8 += 4;
                 }
             }
-        } else if (header->bitpix == -64) {
+        } else if (header.bitpix == -64) {
             for (i = 0; i < avctx->height; i++) {
                 dst16 = (uint16_t *)(p->data[0] + (avctx->height-i-1) * p->linesize[0]);
                 for (j = 0; j < avctx->width; j++) {
                     tdbl = av_int2double(AV_RB64(ptr8));
-                    *dst16++ = ((tdbl - header->data_min) * 65535) / (header->data_max - header->data_min);
+                    *dst16++ = ((tdbl - header.data_min) * 65535) / (header.data_max - header.data_min);
                     ptr8 += 8;
                 }
             }
         } else {
-            av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header->bitpix);
+            av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header.bitpix);
             return AVERROR_INVALIDDATA;
         }
     }
@@ -576,7 +576,6 @@ AVCodec ff_fits_decoder = {
     .name           = "fits",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_FITS,
-    .priv_data_size = sizeof(FITSDecContext),
     .decode         = fits_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
     .long_name      = NULL_IF_CONFIG_SMALL("Flexible Image Transport System")
