@@ -44,6 +44,7 @@ typedef struct FITSHeader {
     char simple;
     int bitpix;
     int64_t blank;
+    int blank_found;
     int naxis;
     int naxisn[3];
     int rgb; /**< 1 if file contains RGB image, 0 otherwise */
@@ -63,6 +64,7 @@ typedef struct FITSHeader {
  */
 static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const uint8_t * end)
 {
+    uint8_t t8;
     int16_t t16;
     int32_t t32;
     int64_t t64;
@@ -73,85 +75,28 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const ui
     header->data_min = DBL_MAX;
     header->data_max = DBL_MIN;
     switch (header->bitpix) {
-        case -64:
-            for (i = 0; i < header->naxisn[1]; i++) {
-                for (j = 0; j < header->naxisn[0]; j++) {
-                    tdbl = av_int2double(AV_RB64(ptr8));
-                    if (tdbl > header->data_max)
-                        header->data_max = tdbl;
-                    if (tdbl < header->data_min)
-                        header->data_min = tdbl;
-                    ptr8 += 8;
-                }
-            }
-            break;
-        case -32:
-            for (i = 0; i < header->naxisn[1]; i++) {
-                for (j = 0; j < header->naxisn[0]; j++) {
-                    tflt = av_int2float(AV_RB32(ptr8));
-                    if (tflt > header->data_max)
-                        header->data_max = tflt;
-                    if (tflt < header->data_min)
-                        header->data_min = tflt;
-                    ptr8 += 4;
-                }
-            }
-            break;
-        case 8:
-            for (i = 0; i < header->naxisn[1]; i++) {
-                for (j = 0; j < header->naxisn[0]; j++) {
-                    if (ptr8[0] != header->blank) {
-                        if (ptr8[0] > header->data_max)
-                            header->data_max = ptr8[0];
-                        if (ptr8[0] < header->data_min)
-                            header->data_min = ptr8[0];
-                    }
-                    ptr8++;
-                }
-            }
-            break;
-        case 16:
-            for (i = 0; i < header->naxisn[1]; i++) {
-                for (j = 0; j < header->naxisn[0]; j++) {
-                    t16 = AV_RB16(ptr8);
-                    if (t16 != header->blank) {
-                        if (t16 > header->data_max)
-                            header->data_max = t16;
-                        if (t16 < header->data_min)
-                            header->data_min = t16;
-                    }
-                    ptr8 += 2;
-                }
-            }
-            break;
-        case 32:
-            for (i = 0; i < header->naxisn[1]; i++) {
-                for (j = 0; j < header->naxisn[0]; j++) {
-                    t32 = AV_RB32(ptr8);
-                    if (t32 != header->blank) {
-                        if (t32 > header->data_max)
-                            header->data_max = t32;
-                        if (t32 < header->data_min)
-                            header->data_min = t32;
-                    }
-                    ptr8 += 4;
-                }
-            }
-            break;
-        case 64:
-            for (i = 0; i < header->naxisn[1]; i++) {
-                for (j = 0; j < header->naxisn[0]; j++) {
-                    t64 = AV_RB64(ptr8);
-                    if (t64 != header->blank) {
-                        if (t64 > header->data_max)
-                            header->data_max = t64;
-                        if (t64 < header->data_min)
-                            header->data_min = t64;
-                    }
-                    ptr8 += 8;
-                }
-            }
-            break;
+#define case_n(a, t, rd) \
+    case a: \
+        for (i = 0; i < header->naxisn[1]; i++) { \
+                for (j = 0; j < header->naxisn[0]; j++) { \
+                    t = rd; \
+                    if (!header->blank_found || t != header->blank) { \
+                        if (t > header->data_max) \
+                            header->data_max = t; \
+                        if (t < header->data_min) \
+                            header->data_min = t; \
+                    } \
+                    ptr8 += abs(a)/8; \
+                } \
+            } \
+            break
+
+        case_n(-64, tdbl, av_int2double(AV_RB64(ptr8)));
+        case_n(-32, tflt, av_int2float(AV_RB32(ptr8)));
+        case_n(8, t8, ptr8[0]);
+        case_n(16, t16, AV_RB16(ptr8));
+        case_n(32, t32, AV_RB32(ptr8));
+        case_n(64, t64, AV_RB64(ptr8));
         default:
             return AVERROR_INVALIDDATA;
     }
@@ -176,7 +121,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
     AVDictionary *metadata = NULL;
     char keyword[10], value[72];
 
-    header->blank = LLONG_MIN;
+    header->blank_found = 0;
     header->bscale = 1.0;
     header->bzero = 0;
     header->rgb = 0;
@@ -267,6 +212,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
     while (strncmp(ptr8, "END", 3)) {
         if (sscanf(ptr8, "BLANK = %d", &t) == 1) {
             header->blank = t;
+            header->blank_found = 1;
         } else if (sscanf(ptr8, "BSCALE = %lf", &d) == 1) {
             header->bscale = d;
         } else if (sscanf(ptr8, "BZERO = %lf", &d) == 1) {
@@ -336,9 +282,14 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
             return AVERROR_INVALIDDATA;
     }
 
-    if (!header->rgb && header->naxis != 2){
+    if (!header->rgb && header->naxis != 2) {
         av_log(avctx, AV_LOG_ERROR, "unsupported number of dimensions, NAXIS = %d\n", header->naxis);
         return AVERROR_INVALIDDATA;
+    }
+
+    if (header->blank_found && (header->bitpix == -32 || header->bitpix == -64)) {
+        av_log(avctx, AV_LOG_WARNING, "BLANK keyword found but BITPIX = %d\n. Ignoring BLANK", header->bitpix);
+        header->blank_found = 0;
     }
 
     ptr8 += 80;
