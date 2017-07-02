@@ -64,8 +64,9 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
 {
     int bitpix, naxis, dim_no, i, naxisn[999], groups=0;
     int64_t header_size = 0, data_size=0, ret, pcount=0, gcount=1, d;
-    char buf[80], c;
+    char buf[81], c;
 
+    memset(buf, 0, 81);
     if ((ret = avio_read(pb, buf, 80)) != 80)
         return AVERROR_EOF;
     if (!strncmp(buf, "SIMPLE", 6) || !strncmp(buf, "XTENSION= 'IMAGE", 16)) {
@@ -90,7 +91,9 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     for (i = 0; i < naxis; i++) {
         if ((ret = avio_read(pb, buf, 80)) != 80)
             return AVERROR_EOF;
-        if (sscanf(buf, "NAXIS%d = %d", &dim_no, &naxisn[i]) != 2 || dim_no != i+1)
+        if (sscanf(buf, "NAXIS%d = %d", &dim_no, &naxisn[i]) != 2)
+            return AVERROR_INVALIDDATA;
+        if (dim_no != i+1)
             return AVERROR_INVALIDDATA;
         header_size += 80;
     }
@@ -116,6 +119,8 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     }
 
     header_size = ceil(header_size/2880.0)*2880;
+    if (header_size < 0)
+        return AVERROR_INVALIDDATA;
 
     if (groups) {
         fits->image = 0;
@@ -123,11 +128,15 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
             data_size = 1;
         for (i = 1; i < naxis; i++) {
             data_size *= naxisn[i];
+            if (data_size < 0)
+                return AVERROR_INVALIDDATA;
         }
     } else if (naxis) {
         data_size = 1;
         for (i = 0; i < naxis; i++) {
             data_size *= naxisn[i];
+            if (data_size < 0)
+                return AVERROR_INVALIDDATA;
         }
     } else {
         fits->image = 0;
@@ -136,11 +145,19 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     data_size += pcount;
     data_size *= (abs(bitpix) >> 3) * gcount;
 
+    if (data_size < 0)
+        return AVERROR_INVALIDDATA;
+
     if (!data_size) {
         fits->image = 0;
     } else {
         data_size = ceil(data_size/2880.0)*2880;
+        if (data_size < 0)
+            return AVERROR_INVALIDDATA;
     }
+
+    if(header_size + data_size < 0)
+        return AVERROR_INVALIDDATA;
 
     return header_size + data_size;
 }
