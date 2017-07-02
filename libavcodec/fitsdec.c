@@ -36,6 +36,12 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/dict.h"
+#include "libavutil/opt.h"
+
+typedef struct FITSContext {
+    const AVClass *class;
+    int blank_val;
+} FITSContext;
 
 /**
  * Structure to store the header keywords in FITS file
@@ -48,7 +54,6 @@ typedef struct FITSHeader {
     int naxis;
     int naxisn[3];
     int rgb; /**< 1 if file contains RGB image, 0 otherwise */
-    int xtension;
     double bscale;
     double bzero;
     double data_min;
@@ -60,6 +65,7 @@ typedef struct FITSHeader {
  * This is called if the values are not present in the header.
  * @param ptr8 pointer to the data
  * @param header pointer to the header
+ * @param end pointer to end of packet
  * @return 0 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
 static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const uint8_t * end)
@@ -190,10 +196,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
             av_log(avctx, AV_LOG_ERROR, "invalid SIMPLE value, SIMPLE = %c\n", header->simple);
             return AVERROR_INVALIDDATA;
         }
-        header->xtension = 0;
-    } else if (!strncmp(keyword, "XTENSION", 8) && !strncmp(value, "'IMAGE   '", 10)) {
-        header->xtension = 1;
-    } else {
+    } else if (strncmp(keyword, "XTENSION", 8) || strncmp(value, "'IMAGE   '", 10)) {
         av_log(avctx, AV_LOG_ERROR, "missing SIMPLE keyword or invalid XTENSION\n");
         return AVERROR_INVALIDDATA;
     }
@@ -356,6 +359,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     uint32_t *dst32;
     uint64_t *dst64, size, r, g, b, a, t;
     FITSHeader header;
+    FITSContext * fitsctx = avctx->priv_data;
 
     end = ptr8 + avpkt->size;
     if ((ret = fits_read_header(avctx, &ptr8, &header, end, &p->metadata)) < 0)
@@ -402,7 +406,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                             if (!header.blank_found || t != header.blank) { \
                                 t = t * header.bscale + header.bzero; \
                             } else { \
-                                t = 0; \
+                                t = fitsctx->blank_val; \
                             } \
                             a = t << (cas * 3); \
                         } else { \
@@ -412,21 +416,21 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                         if (!header.blank_found || t != header.blank) { \
                             t = t * header.bscale + header.bzero; \
                         } else { \
-                            t = 0; \
+                            t = fitsctx->blank_val; \
                         } \
                         r = t << (cas * 2); \
                         t = dref(ptr8 + size); \
                         if (!header.blank_found || t != header.blank) { \
                             t = t * header.bscale + header.bzero; \
                         } else { \
-                            t = 0; \
+                            t = fitsctx->blank_val; \
                         } \
                         g = t << cas; \
                         t = dref(ptr8 + size * 2); \
                         if (!header.blank_found || t != header.blank) { \
                             t = t * header.bscale + header.bzero; \
                         } else { \
-                            t = 0; \
+                            t = fitsctx->blank_val; \
                         } \
                         b = t; \
                         *dst++ = ((type)a) | ((type)r) | ((type)g) | ((type)b); \
@@ -449,7 +453,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                         if (!header.blank_found || t != header.blank) { \
                             t = ((t - header.data_min) * ((1 << (sizeof(type) * 8)) - 1)) / (header.data_max - header.data_min); \
                         } else { \
-                            t = 0; \
+                            t = fitsctx->blank_val; \
                         } \
                         *dst++ = (type) t; \
                         ptr8 += abs(cas)/8; \
@@ -477,11 +481,25 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     return avpkt->size;
 }
 
+static const AVOption fits_options[] = {
+    { "blank_val", "value that is used to replace BLANK pixels in data array", offsetof(FITSContext, blank_val), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 65535, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM},
+    { NULL },
+};
+
+static const AVClass fits_decoder_class = {
+    .class_name = "FITS decoder",
+    .item_name  = av_default_item_name,
+    .option     = fits_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 AVCodec ff_fits_decoder = {
     .name           = "fits",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_FITS,
+    .priv_data_size = sizeof(FITSContext),
     .decode         = fits_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("Flexible Image Transport System")
+    .long_name      = NULL_IF_CONFIG_SMALL("Flexible Image Transport System"),
+    .priv_class     = &fits_decoder_class
 };
