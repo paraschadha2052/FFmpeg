@@ -92,7 +92,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const ui
                         if (t < header->data_min) \
                             header->data_min = t; \
                     } \
-                    ptr8 += abs(a)/8; \
+                    ptr8 += abs(a) >> 3; \
                 } \
             } \
             break
@@ -110,7 +110,7 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const ui
 }
 
 /**
- * Extract keyword, value from a header line (80 bytes) and store them in keyword and value strings respectively
+ * Extract keyword and value from a header line (80 bytes) and store them in keyword and value strings respectively
  * @param ptr8 pointer to the data
  * @param keyword pointer to the char array in which keyword is to be stored
  * @param value pointer to the char array in which value is to be stored
@@ -250,12 +250,12 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
             return AVERROR_INVALIDDATA;
         }
 
-        if(dim_no != i+1) {
+        if (dim_no != i+1) {
             av_log(avctx, AV_LOG_ERROR, "expected NAXIS%d keyword, found %s = %s\n", i+1, keyword, value);
             return AVERROR_INVALIDDATA;
         }
 
-        if(sscanf(value, "%d", &header->naxisn[i]) != 1) {
+        if (sscanf(value, "%d", &header->naxisn[i]) != 1) {
             av_log(avctx, AV_LOG_ERROR, "invalid value of NAXIS%d = %s\n", i+1, value);
             return AVERROR_INVALIDDATA;
         }
@@ -434,7 +434,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                         } \
                         b = t; \
                         *dst++ = ((type)a) | ((type)r) | ((type)g) | ((type)b); \
-                        ptr8 += cas/8; \
+                        ptr8 += cas >> 3; \
                     } \
                 } \
                 break
@@ -456,7 +456,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
                             t = fitsctx->blank_val; \
                         } \
                         *dst++ = (type) t; \
-                        ptr8 += abs(cas)/8; \
+                        ptr8 += abs(cas) >> 3; \
                     } \
                 } \
                 break
@@ -482,7 +482,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
 }
 
 static const AVOption fits_options[] = {
-    { "blank_val", "value that is used to replace BLANK pixels in data array", offsetof(FITSContext, blank_val), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 65535, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM},
+    { "blank_value", "value that is used to replace BLANK pixels in data array", offsetof(FITSContext, blank_val), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 65535, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM},
     { NULL },
 };
 
