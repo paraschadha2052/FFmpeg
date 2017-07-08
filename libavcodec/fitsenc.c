@@ -155,7 +155,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         lines_written++;
     }
 
-    if(!fitsctx->first_image) {
+    if (!fitsctx->first_image) {
         write_keyword_value(header_line, "PCOUNT", 0);
         bytestream2_put_buffer(&pbc, header_line, 80);
         lines_written++;
@@ -189,8 +189,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     bytestream2_put_buffer(&pbc, header_line, 80);
     lines_written++;
 
-    lines_written %= 36;
-    t = (36 - lines_written) % 36;
+    t = 36 - lines_written;
 
     for (i = 0; i < 80; i++) {
         header_line[i] = ' ';
@@ -198,7 +197,6 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     while (t--) {
         bytestream2_put_buffer(&pbc, header_line, 80);
     }
-
 
     if (rgb) {
         switch (avctx->pix_fmt) {
@@ -220,10 +218,10 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             case_n(AV_PIX_FMT_RGBA64BE, AV_RB16);
         }
     } else {
-        for(i = 0; i < avctx->height; i++) {
+        for (i = 0; i < avctx->height; i++) {
             ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0];
             if (bitpix == 16) {
-                for(j = 0; j < avctx->width; j++) {
+                for (j = 0; j < avctx->width; j++) {
                     bytestream2_put_be16(&pbc, AV_RB16(ptr) - bzero);
                     ptr += 2;
                 }
