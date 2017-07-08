@@ -237,6 +237,7 @@ AVOutputFormat ff_image2_muxer = {
 AVOutputFormat ff_image2pipe_muxer = {
     .name           = "image2pipe",
     .long_name      = NULL_IF_CONFIG_SMALL("piped image2 sequence"),
+    .extensions     = "fits",
     .priv_data_size = sizeof(VideoMuxData),
     .video_codec    = AV_CODEC_ID_MJPEG,
     .write_header   = write_header,
