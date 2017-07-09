@@ -39,7 +39,10 @@ static int fits_probe(AVProbeData *p)
 {
     const uint8_t *b = p->buf;
 
-    if (AV_RB32(b) == 0x53494d50 && AV_RB16(b+4) == 0x4c45)
+    if (AV_RB64(b) == 0x53494d504c452020 &&
+        AV_RB64(b + 8) == 0x3D20202020202020 &&
+        AV_RB64(b + 16) == 0x2020202020202020 &&
+        AV_RB48(b + 24) == 0x202020202054)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
@@ -67,29 +70,29 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     char buf[81], c;
 
     memset(buf, 0, 81);
-    if ((ret = avio_read(pb, buf, 80)) != 80)
+    ret = avio_read(pb, buf, 80);
+    if (ret != 80)
         return AVERROR_EOF;
-    if (!strncmp(buf, "SIMPLE", 6) || !strncmp(buf, "XTENSION= 'IMAGE", 16)) {
-        fits->image = 1;
-    } else {
-        fits->image = 0;
-    }
+    fits->image = !strncmp(buf, "SIMPLE", 6) || !strncmp(buf, "XTENSION= 'IMAGE", 16);
     header_size += 80;
 
-    if ((ret = avio_read(pb, buf, 80)) != 80)
+    ret = avio_read(pb, buf, 80);
+    if (ret != 80)
         return AVERROR_EOF;
     if (sscanf(buf, "BITPIX = %d", &bitpix) != 1)
         return AVERROR_INVALIDDATA;
     header_size += 80;
 
-    if ((ret = avio_read(pb, buf, 80)) != 80)
+    ret = avio_read(pb, buf, 80);
+    if (ret != 80)
         return AVERROR_EOF;
     if (sscanf(buf, "NAXIS = %d", &naxis) != 1)
         return AVERROR_INVALIDDATA;
     header_size += 80;
 
     for (i = 0; i < naxis; i++) {
-        if ((ret = avio_read(pb, buf, 80)) != 80)
+        ret = avio_read(pb, buf, 80);
+        if (ret != 80)
             return AVERROR_EOF;
         if (sscanf(buf, "NAXIS%d = %d", &dim_no, &naxisn[i]) != 2)
             return AVERROR_INVALIDDATA;
@@ -98,7 +101,8 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
         header_size += 80;
     }
 
-    if ((ret = avio_read(pb, buf, 80)) != 80)
+    ret = avio_read(pb, buf, 80);
+    if (ret != 80)
         return AVERROR_EOF;
     header_size += 80;
 
@@ -113,14 +117,13 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
             }
         }
 
-        if ((ret = avio_read(pb, buf, 80)) != 80)
+        ret = avio_read(pb, buf, 80);
+        if (ret != 80)
             return AVERROR_EOF;
         header_size += 80;
     }
 
-    header_size = ceil(header_size/2880.0)*2880;
-    if (header_size < 0)
-        return AVERROR_INVALIDDATA;
+    header_size = ((header_size + 2879) / 2880) * 2880;
 
     if (groups) {
         fits->image = 0;
@@ -151,7 +154,7 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     if (!data_size) {
         fits->image = 0;
     } else {
-        data_size = ceil(data_size/2880.0)*2880;
+        data_size = ((data_size + 2879) / 2880) * 2880;
         if (data_size < 0)
             return AVERROR_INVALIDDATA;
     }
