@@ -65,8 +65,8 @@ static int fits_read_header(AVFormatContext *s)
 
 static int64_t find_size(AVIOContext * pb, FITSContext * fits)
 {
-    int bitpix, naxis, dim_no, i, naxisn[999], groups=0, pcount=0, gcount=1, d;
-    int64_t header_size = 0, data_size=0, ret, t;
+    int bitpix, naxis, dim_no, i, naxisn[999], groups = 0, pcount = 0, gcount = 1, d;
+    int64_t header_size = 0, data_size = 0, ret, t;
     char buf[81] = { 0 }, c;
 
     ret = avio_read(pb, buf, 80);
@@ -169,7 +169,7 @@ static int64_t find_size(AVIOContext * pb, FITSContext * fits)
     data_size += pcount;
 
     t = (abs(bitpix) >> 3) * ((int64_t) gcount);
-    if(t > LLONG_MAX / data_size)
+    if(data_size && t > LLONG_MAX / data_size)
         return AVERROR_INVALIDDATA;
     data_size *= t;
 
