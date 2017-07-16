@@ -42,22 +42,22 @@ static av_cold int fits_encode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int write_keyword_value(char * header, const char * keyword, int value)
+static int write_keyword_value(uint8_t **bytestream, const char * keyword, int value)
 {
-    int i, len, ret;
+    int len, ret;
+    uint8_t * header = * bytestream;
     len = strlen(keyword);
-    for (i = 0; i < len; i++) {
-        header[i] = keyword[i];
-    }
-    for (; i < 8; i++) {
-        header[i] = ' ';
-    }
+
+    memcpy(header, keyword, len);
+    memset(header + len, ' ', 8 - len);
     header[8] = '=';
     header[9] = ' ';
-    ret = snprintf(header + 10, 70, "%d", value);
-    for (i = ret + 10; i < 80; i++) {
-        header[i] = ' ';
-    }
+    header += 10;
+
+    ret = snprintf(header, 70, "%d", value);
+    memset(header + ret, ' ', 70 - ret);
+
+    *bytestream += 80;
     return 0;
 }
 
@@ -66,11 +66,9 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 {
     AVFrame * const p = (AVFrame *)pict;
     FITSContext * fitsctx = avctx->priv_data;
-    PutByteContext pbc;
-    uint8_t *ptr;
-    uint64_t header_size = 2880, data_size = 0, padded_data_size = 0, lines_written = 0;
+    uint8_t *bytestream, *bytestream_start, *ptr;
+    uint64_t header_size = 2880, data_size = 0, padded_data_size = 0;
     int ret, bitpix, naxis, naxis3 = 1, bzero = 0, i, j, k, t, rgb = 0;
-    char header_line[80];
 
     switch (avctx->pix_fmt) {
         case AV_PIX_FMT_GRAY8:
@@ -116,128 +114,94 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if ((ret = ff_alloc_packet2(avctx, pkt, header_size + padded_data_size, 0)) < 0)
         return ret;
 
-    bytestream2_init_writer(&pbc, pkt->data, pkt->size);
+    bytestream_start =
+    bytestream       = pkt->data;
 
     if (fitsctx->first_image) {
-        strncpy(header_line, "SIMPLE  = ", 10);
-        for (i = 10; i < 80; i++) {
-            header_line[i] = ' ';
-        }
-        header_line[29] = 'T';
+        memcpy(bytestream, "SIMPLE  = ", 10);
+        memset(bytestream + 10, ' ', 70);
+        bytestream[29] = 'T';
     } else {
-        strncpy(header_line, "XTENSION= 'IMAGE   '", 20);
-        for (i = 20; i < 80; i++) {
-            header_line[i] = ' ';
-        }
+        memcpy(bytestream, "XTENSION= 'IMAGE   '", 20);
+        memset(bytestream + 20, ' ', 60);
     }
-    bytestream2_put_buffer(&pbc, header_line, 80);
-    lines_written++;
+    bytestream += 80;
 
-    write_keyword_value(header_line, "BITPIX", bitpix);
-    bytestream2_put_buffer(&pbc, header_line, 80);
-    lines_written++;
+    write_keyword_value(&bytestream, "BITPIX", bitpix);
+    write_keyword_value(&bytestream, "NAXIS", naxis);
+    write_keyword_value(&bytestream, "NAXIS1", avctx->width);
+    write_keyword_value(&bytestream, "NAXIS2", avctx->height);
 
-    write_keyword_value(header_line, "NAXIS", naxis);
-    bytestream2_put_buffer(&pbc, header_line, 80);
-    lines_written++;
-
-    write_keyword_value(header_line, "NAXIS1", avctx->width);
-    bytestream2_put_buffer(&pbc, header_line, 80);
-    lines_written++;
-
-    write_keyword_value(header_line, "NAXIS2", avctx->height);
-    bytestream2_put_buffer(&pbc, header_line, 80);
-    lines_written++;
-
-    if (rgb) {
-        write_keyword_value(header_line, "NAXIS3", naxis3);
-        bytestream2_put_buffer(&pbc, header_line, 80);
-        lines_written++;
-    }
+    if (rgb)
+        write_keyword_value(&bytestream, "NAXIS3", naxis3);
 
     if (!fitsctx->first_image) {
-        write_keyword_value(header_line, "PCOUNT", 0);
-        bytestream2_put_buffer(&pbc, header_line, 80);
-        lines_written++;
-
-        write_keyword_value(header_line, "GCOUNT", 1);
-        bytestream2_put_buffer(&pbc, header_line, 80);
-        lines_written++;
+        write_keyword_value(&bytestream, "PCOUNT", 0);
+        write_keyword_value(&bytestream, "GCOUNT", 1);
     } else {
         fitsctx->first_image = 0;
     }
 
-    if (bitpix == 16) {
-        write_keyword_value(header_line, "BZERO", bzero);
-        bytestream2_put_buffer(&pbc, header_line, 80);
-        lines_written++;
-    }
+    if (bitpix == 16)
+        write_keyword_value(&bytestream, "BZERO", bzero);
 
     if (rgb) {
-        strncpy(header_line, "CTYPE3  = 'RGB     '", 20);
-        for (i = 20; i < 80; i++) {
-            header_line[i] = ' ';
-        }
-        bytestream2_put_buffer(&pbc, header_line, 80);
-        lines_written++;
+        memcpy(bytestream, "CTYPE3  = 'RGB     '", 20);
+        memset(bytestream + 20, ' ', 60);
+        bytestream += 80;
     }
 
-    strncpy(header_line, "END", 3);
-    for (i = 3; i < 80; i++) {
-        header_line[i] = ' ';
-    }
-    bytestream2_put_buffer(&pbc, header_line, 80);
-    lines_written++;
+    memcpy(bytestream, "END", 3);
+    memset(bytestream + 3, ' ', 77);
+    bytestream += 80;
 
-    t = 36 - lines_written;
-
-    for (i = 0; i < 80; i++) {
-        header_line[i] = ' ';
-    }
-    while (t--) {
-        bytestream2_put_buffer(&pbc, header_line, 80);
-    }
+    t = header_size - (bytestream - bytestream_start);
+    memset(bytestream, ' ', t);
+    bytestream += t;
 
     if (rgb) {
         switch (avctx->pix_fmt) {
-        #define case_n(cas, dref) \
-            case cas: \
-                for (k = 0; k < naxis3; k++) { \
-                    for (i = 0; i < avctx->height; i++) { \
-                        ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0] + k; \
-                        for (j = 0; j < avctx->width; j++) { \
-                            bytestream2_put_byte(&pbc, dref(ptr) - bzero); \
-                            ptr += naxis3; \
-                        } \
-                    } \
+
+#define CASE_N(cas1, cas2, dref, put_byte) \
+    case cas1: \
+    case cas2: \
+        for (k = 0; k < naxis3; k++) { \
+            for (i = 0; i < avctx->height; i++) { \
+                ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0] + k; \
+                for (j = 0; j < avctx->width; j++) { \
+                    put_byte(&bytestream, dref(ptr) - bzero); \
+                    ptr += naxis3; \
                 } \
-                break
-            case_n(AV_PIX_FMT_RGB24, *);
-            case_n(AV_PIX_FMT_RGBA, *);
-            case_n(AV_PIX_FMT_RGB48BE, AV_RB16);
-            case_n(AV_PIX_FMT_RGBA64BE, AV_RB16);
+            } \
+        } \
+        break
+
+            CASE_N(AV_PIX_FMT_RGB24, AV_PIX_FMT_RGBA, *, bytestream_put_byte);
+            CASE_N(AV_PIX_FMT_RGB48BE, AV_PIX_FMT_RGBA64BE, AV_RB16, bytestream_put_be16);
         }
     } else {
         for (i = 0; i < avctx->height; i++) {
             ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0];
             if (bitpix == 16) {
                 for (j = 0; j < avctx->width; j++) {
-                    bytestream2_put_be16(&pbc, AV_RB16(ptr) - bzero);
+                    bytestream_put_be16(&bytestream, AV_RB16(ptr) - bzero);
                     ptr += 2;
                 }
             } else {
-                bytestream2_put_buffer(&pbc, ptr, avctx->width);
+                memcpy(bytestream, ptr, avctx->width);
+                bytestream += avctx->width;
             }
         }
     }
 
     t = padded_data_size - data_size;
-    while (t--) {
-        bytestream2_put_byte(&pbc, 0);
-    }
+    memset(bytestream, 0, t);
+    bytestream += t;
 
+    pkt->size   = bytestream - bytestream_start;
     pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
+
     return 0;
 }
 
