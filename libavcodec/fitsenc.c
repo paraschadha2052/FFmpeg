@@ -161,23 +161,30 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     if (rgb) {
         switch (avctx->pix_fmt) {
-
-#define CASE_N(cas1, cas2, dref, put_byte) \
-    case cas1: \
-    case cas2: \
-        for (k = 0; k < naxis3; k++) { \
-            for (i = 0; i < avctx->height; i++) { \
-                ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0] + k; \
-                for (j = 0; j < avctx->width; j++) { \
-                    put_byte(&bytestream, dref(ptr) - bzero); \
-                    ptr += naxis3; \
-                } \
-            } \
-        } \
-        break
-
-            CASE_N(AV_PIX_FMT_RGB24, AV_PIX_FMT_RGBA, *, bytestream_put_byte);
-            CASE_N(AV_PIX_FMT_RGB48BE, AV_PIX_FMT_RGBA64BE, AV_RB16, bytestream_put_be16);
+            case AV_PIX_FMT_RGB24:
+            case AV_PIX_FMT_RGBA:
+                for (k = 0; k < naxis3; k++) {
+                    for (i = 0; i < avctx->height; i++) {
+                        ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0] + k;
+                        for (j = 0; j < avctx->width; j++) {
+                            bytestream_put_byte(&bytestream, ptr[0]);
+                            ptr += naxis3;
+                        }
+                    }
+                }
+                break;
+            case AV_PIX_FMT_RGB48BE:
+            case AV_PIX_FMT_RGBA64BE:
+                for (k = 0; k < naxis3; k++) {
+                    for (i = 0; i < avctx->height; i++) {
+                        ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0] + k * 2;
+                        for (j = 0; j < avctx->width; j++) {
+                            bytestream_put_be16(&bytestream, AV_RB16(ptr) - bzero);
+                            ptr += naxis3 * 2;
+                        }
+                    }
+                }
+                break;
         }
     } else {
         for (i = 0; i < avctx->height; i++) {
