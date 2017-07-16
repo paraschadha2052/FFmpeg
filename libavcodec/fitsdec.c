@@ -81,28 +81,28 @@ static int fill_data_min_max(const uint8_t * ptr8, FITSHeader * header, const ui
     header->data_min = DBL_MAX;
     header->data_max = DBL_MIN;
     switch (header->bitpix) {
-    #define case_n(a, t, rd) \
-        case a: \
-            for (i = 0; i < header->naxisn[1]; i++) { \
-                for (j = 0; j < header->naxisn[0]; j++) { \
-                    t = rd; \
-                    if (!header->blank_found || t != header->blank) { \
-                        if (t > header->data_max) \
-                            header->data_max = t; \
-                        if (t < header->data_min) \
-                            header->data_min = t; \
-                    } \
-                    ptr8 += abs(a) >> 3; \
+#define CASE_N(a, t, rd) \
+    case a: \
+        for (i = 0; i < header->naxisn[1]; i++) { \
+            for (j = 0; j < header->naxisn[0]; j++) { \
+                t = rd; \
+                if (!header->blank_found || t != header->blank) { \
+                    if (t > header->data_max) \
+                        header->data_max = t; \
+                    if (t < header->data_min) \
+                        header->data_min = t; \
                 } \
+                ptr8 += abs(a) >> 3; \
             } \
-            break
+        } \
+        break
 
-        case_n(-64, tdbl, av_int2double(AV_RB64(ptr8)));
-        case_n(-32, tflt, av_int2float(AV_RB32(ptr8)));
-        case_n(8, t8, ptr8[0]);
-        case_n(16, t16, AV_RB16(ptr8));
-        case_n(32, t32, AV_RB32(ptr8));
-        case_n(64, t64, AV_RB64(ptr8));
+        CASE_N(-64, tdbl, av_int2double(AV_RB64(ptr8)));
+        CASE_N(-32, tflt, av_int2float(AV_RB32(ptr8)));
+        CASE_N(8, t8, ptr8[0]);
+        CASE_N(16, t16, AV_RB16(ptr8));
+        CASE_N(32, t32, AV_RB32(ptr8));
+        CASE_N(64, t64, AV_RB64(ptr8));
         default:
             return AVERROR_INVALIDDATA;
     }
@@ -353,11 +353,10 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     int64_t t64;
     float   tflt;
     double  tdbl;
-    int ret, i, j;
+    int ret, i, j, k;
     uint8_t *dst8;
     uint16_t *dst16;
-    uint32_t *dst32;
-    uint64_t *dst64, size, r, g, b, a, t;
+    uint64_t size, t;
     FITSHeader header;
     FITSContext * fitsctx = avctx->priv_data;
 
@@ -365,13 +364,21 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     if ((ret = fits_read_header(avctx, &ptr8, &header, end, &p->metadata)) < 0)
         return ret;
 
-    size = (header.naxisn[0]) * (header.naxisn[1]);
+    size = (abs(header.bitpix) >> 3) * (header.naxisn[0]) * (header.naxisn[1]);
 
     if (header.rgb) {
         if (header.bitpix == 8) {
-            avctx->pix_fmt = AV_PIX_FMT_RGB32;
+            if (header.naxisn[2] == 3) {
+                avctx->pix_fmt = AV_PIX_FMT_RGB24;
+            } else {
+                avctx->pix_fmt = AV_PIX_FMT_RGBA;
+            }
         } else if (header.bitpix == 16) {
-            avctx->pix_fmt = AV_PIX_FMT_RGBA64;
+            if (header.naxisn[2] == 3) {
+                avctx->pix_fmt = AV_PIX_FMT_RGB48LE;
+            } else {
+                avctx->pix_fmt = AV_PIX_FMT_RGBA64LE;
+            }
         } else {
             av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX = %d\n", header.bitpix);
             return AVERROR_INVALIDDATA;
@@ -396,77 +403,52 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
      */
     if (header.rgb) {
         switch(header.bitpix) {
-        #define case_rgb(cas, dst, type, dref) \
-            case cas: \
-                for (i = 0; i < avctx->height; i++) { \
-                    dst = (type *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]); \
-                    for (j = 0; j < avctx->width; j++) { \
-                        if (header.naxisn[2] == 4) { \
-                            t = dref(ptr8 + size * 3); \
-                            if (!header.blank_found || t != header.blank) { \
-                                t = t * header.bscale + header.bzero; \
-                            } else { \
-                                t = fitsctx->blank_val; \
-                            } \
-                            a = t << (cas * 3); \
-                        } else { \
-                            a = (((1ULL << cas) - 1) << (cas * 3)); \
-                        } \
-                        t = dref(ptr8); \
-                        if (!header.blank_found || t != header.blank) { \
-                            t = t * header.bscale + header.bzero; \
-                        } else { \
-                            t = fitsctx->blank_val; \
-                        } \
-                        r = t << (cas * 2); \
-                        t = dref(ptr8 + size); \
-                        if (!header.blank_found || t != header.blank) { \
-                            t = t * header.bscale + header.bzero; \
-                        } else { \
-                            t = fitsctx->blank_val; \
-                        } \
-                        g = t << cas; \
-                        t = dref(ptr8 + size * 2); \
-                        if (!header.blank_found || t != header.blank) { \
-                            t = t * header.bscale + header.bzero; \
-                        } else { \
-                            t = fitsctx->blank_val; \
-                        } \
-                        b = t; \
-                        *dst++ = ((type)a) | ((type)r) | ((type)g) | ((type)b); \
-                        ptr8 += cas >> 3; \
+#define CASE_RGB(cas, dst, type, dref) \
+    case cas: \
+        for (i = 0; i < avctx->height; i++) { \
+            dst = (type *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]); \
+            for (j = 0; j < avctx->width; j++) { \
+                for (k = 0; k < header.naxisn[2]; k++) { \
+                    t32 = (int16_t) dref(ptr8 + size * k); \
+                    if (!header.blank_found || t32 != header.blank) { \
+                        t = t32 * header.bscale + header.bzero; \
+                    } else { \
+                        t = fitsctx->blank_val; \
                     } \
+                    *dst++ = (type) t; \
                 } \
-                break
-
-            case_rgb(8, dst32, uint32_t, *);
-            case_rgb(16, dst64, uint64_t, AV_RB16);
+                ptr8 += cas >> 3; \
+            } \
+        } \
+        break
+            CASE_RGB(8, dst8, uint8_t, *);
+            CASE_RGB(16, dst16, uint16_t, AV_RB16);
         }
     } else {
         switch (header.bitpix) {
-        #define case_gray(cas, dst, type, t, rd) \
-            case cas: \
-                for (i = 0; i < avctx->height; i++) { \
-                    dst = (type *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]); \
-                    for (j = 0; j < avctx->width; j++) { \
-                        t = rd; \
-                        if (!header.blank_found || t != header.blank) { \
-                            t = ((t - header.data_min) * ((1 << (sizeof(type) * 8)) - 1)) / (header.data_max - header.data_min); \
-                        } else { \
-                            t = fitsctx->blank_val; \
-                        } \
-                        *dst++ = (type) t; \
-                        ptr8 += abs(cas) >> 3; \
-                    } \
+#define CASE_GRAY(cas, dst, type, t, rd) \
+    case cas: \
+        for (i = 0; i < avctx->height; i++) { \
+            dst = (type *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]); \
+            for (j = 0; j < avctx->width; j++) { \
+                t = rd; \
+                if (!header.blank_found || t != header.blank) { \
+                    t = ((t - header.data_min) * ((1 << (sizeof(type) * 8)) - 1)) / (header.data_max - header.data_min); \
+                } else { \
+                    t = fitsctx->blank_val; \
                 } \
-                break
+                *dst++ = (type) t; \
+                ptr8 += abs(cas) >> 3; \
+            } \
+        } \
+        break
 
-            case_gray(-64, dst16, uint16_t, tdbl, av_int2double(AV_RB64(ptr8)));
-            case_gray(-32, dst16, uint16_t, tflt, av_int2float(AV_RB32(ptr8)));
-            case_gray(8, dst8, uint8_t, t8, ptr8[0]);
-            case_gray(16, dst16, uint16_t, t16, AV_RB16(ptr8));
-            case_gray(32, dst16, uint16_t, t32, AV_RB32(ptr8));
-            case_gray(64, dst16, uint16_t, t64, AV_RB64(ptr8));
+            CASE_GRAY(-64, dst16, uint16_t, tdbl, av_int2double(AV_RB64(ptr8)));
+            CASE_GRAY(-32, dst16, uint16_t, tflt, av_int2float(AV_RB32(ptr8)));
+            CASE_GRAY(8, dst8, uint8_t, t8, ptr8[0]);
+            CASE_GRAY(16, dst16, uint16_t, t16, AV_RB16(ptr8));
+            CASE_GRAY(32, dst16, uint16_t, t32, AV_RB32(ptr8));
+            CASE_GRAY(64, dst16, uint16_t, t64, AV_RB64(ptr8));
             default:
                 av_log(avctx, AV_LOG_ERROR, "invalid BITPIX, %d\n", header.bitpix);
                 return AVERROR_INVALIDDATA;
