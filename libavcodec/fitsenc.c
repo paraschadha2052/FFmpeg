@@ -24,6 +24,9 @@
  * FITS image encoder
  *
  * Specification: https://fits.gsfc.nasa.gov/fits_standard.html Version 3.0
+ *
+ * RGBA images are encoded as planes in RGBA order. So, NAXIS3 is 3 or 4 for them.
+ * Also CTYPE = 'RGB ' is added to the header to distinguish them from 3d images.
  */
 
 #include "libavutil/intreadwrite.h"
@@ -127,13 +130,13 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
     bytestream += 80;
 
-    write_keyword_value(&bytestream, "BITPIX", bitpix);
-    write_keyword_value(&bytestream, "NAXIS", naxis);
-    write_keyword_value(&bytestream, "NAXIS1", avctx->width);
-    write_keyword_value(&bytestream, "NAXIS2", avctx->height);
+    write_keyword_value(&bytestream, "BITPIX", bitpix);         // no of bits per pixel
+    write_keyword_value(&bytestream, "NAXIS", naxis);           // no of dimensions of image
+    write_keyword_value(&bytestream, "NAXIS1", avctx->width);   // first dimension i.e. width
+    write_keyword_value(&bytestream, "NAXIS2", avctx->height);  // second dimension i.e. height
 
     if (rgb)
-        write_keyword_value(&bytestream, "NAXIS3", naxis3);
+        write_keyword_value(&bytestream, "NAXIS3", naxis3);     // third dimension to store RGBA planes
 
     if (!fitsctx->first_image) {
         write_keyword_value(&bytestream, "PCOUNT", 0);
@@ -142,6 +145,11 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         fitsctx->first_image = 0;
     }
 
+    /*
+     * Since FITS does not support unsigned 16 bit integers,
+     * BZERO = 32768 is used to store unsigned 16 bit integers as
+     * signed integers so that it can be read properly.
+     */
     if (bitpix == 16)
         write_keyword_value(&bytestream, "BZERO", bzero);
 
