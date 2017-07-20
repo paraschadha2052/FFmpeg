@@ -26,7 +26,7 @@
  * Specification: https://fits.gsfc.nasa.gov/fits_standard.html Version 3.0
  *
  * RGBA images are encoded as planes in RGBA order. So, NAXIS3 is 3 or 4 for them.
- * Also CTYPE = 'RGB ' is added to the header to distinguish them from 3d images.
+ * Also CTYPE3 = 'RGB ' is added to the header to distinguish them from 3d images.
  */
 
 #include "libavutil/intreadwrite.h"
@@ -45,20 +45,19 @@ static av_cold int fits_encode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int write_keyword_value(uint8_t **bytestream, const char * keyword, int value)
+static int write_keyword_value(uint8_t **bytestream, const char *keyword, int value)
 {
     int len, ret;
-    uint8_t * header = * bytestream;
+    uint8_t *header = *bytestream;
     len = strlen(keyword);
 
+    memset(header, ' ', 80);
     memcpy(header, keyword, len);
-    memset(header + len, ' ', 8 - len);
     header[8] = '=';
     header[9] = ' ';
     header += 10;
-
     ret = snprintf(header, 70, "%d", value);
-    memset(header + ret, ' ', 70 - ret);
+    header[ret] = ' ';
 
     *bytestream += 80;
     return 0;
@@ -68,7 +67,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                             const AVFrame *pict, int *got_packet)
 {
     AVFrame * const p = (AVFrame *)pict;
-    FITSContext * fitsctx = avctx->priv_data;
+    FITSContext *fitsctx = avctx->priv_data;
     uint8_t *bytestream, *bytestream_start, *ptr;
     uint64_t header_size = 2880, data_size = 0, padded_data_size = 0;
     int ret, bitpix, naxis, naxis3 = 1, bzero = 0, i, j, k, t, rgb = 0;
