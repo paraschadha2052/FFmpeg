@@ -275,7 +275,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
     lines_read++;
 
     while (strncmp(keyword, "END", 3)) {
-        if (!strncmp(keyword, "BLANK", 5) && sscanf(value, "%ld", &t) == 1) {
+        if (!strncmp(keyword, "BLANK", 5) && sscanf(value, "%"SCNd64"", &t) == 1) {
             header->blank = t;
             header->blank_found = 1;
         } else if (!strncmp(keyword, "BSCALE", 6) && sscanf(value, "%lf", &d) == 1) {
