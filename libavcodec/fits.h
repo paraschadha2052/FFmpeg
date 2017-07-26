@@ -27,6 +27,8 @@ typedef enum FITSHeaderState {
     STATE_BITPIX,
     STATE_NAXIS,
     STATE_NAXIS_N,
+    STATE_PCOUNT,
+    STATE_GCOUNT,
     STATE_REST,
 } FITSHeaderState;
 
@@ -36,23 +38,41 @@ typedef enum FITSHeaderState {
 typedef struct FITSHeader {
     FITSHeaderState state;
     unsigned naxis_index;
-    char simple;
     int bitpix;
     int64_t blank;
     int blank_found;
     int naxis;
     int naxisn[999];
+    int pcount;
+    int gcount;
+    int groups;
     int rgb; /**< 1 if file contains RGB image, 0 otherwise */
+    int image_extension;
     double bscale;
     double bzero;
+    int data_min_found;
     double data_min;
+    int data_max_found;
     double data_max;
 } FITSHeader;
 
-//ToDo: Add Comments
 
+/**
+ * Initialize a single header line
+ * @param header pointer to the header
+ * @param state current state of parsing the header
+ * @return 0 if successful otherwise AVERROR_INVALIDDATA
+ */
 int avpriv_fits_header_init(FITSHeader *header, FITSHeaderState state);
 
-int avpriv_fits_header_parse_line(FITSHeader *header, uint8_t line[80], AVDictionary ***metadata);
+/**
+ * Parse a single header line
+ * @param avcl used in av_log
+ * @param header pointer to the header
+ * @param line one header line
+ * @param metadata used to store metadata while decoding
+ * @return 0 if successful otherwise AVERROR_INVALIDDATA
+ */
+int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t line[80], AVDictionary ***metadata);
 
 #endif /* AVCODEC_FITS_H */
