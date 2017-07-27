@@ -72,16 +72,18 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     const uint16_t flip = (1 << 15);
     uint64_t header_size = 2880, data_size = 0, padded_data_size = 0;
     int ret, bitpix, naxis, naxis3 = 1, bzero = 0, i, j, k, t, rgb = 0;
-    static const int map[] = {2, 0, 1, 3}; // mapping from GBRA -> RGBA as RGBA is to be stored in FITS file..
+    int map[] = {2, 0, 1, 3}; // mapping from GBRA -> RGBA as RGBA is to be stored in FITS file..
 
     switch (avctx->pix_fmt) {
         case AV_PIX_FMT_GRAY8:
             bitpix = 8;
             naxis = 2;
+            map[0] = 0; // grayscale images should be directly mapped
             break;
         case AV_PIX_FMT_GRAY16BE:
             bitpix = 16;
             naxis = 2;
+            map[0] = 0;
             bzero = 32768;
             break;
         case AV_PIX_FMT_GBRP:
@@ -99,13 +101,13 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         case AV_PIX_FMT_GBRAP16BE:
             bitpix = 16;
             naxis = 3;
-            bzero = 32768;
             rgb = 1;
             if (avctx->pix_fmt == AV_PIX_FMT_GBRP16BE) {
                 naxis3 = 3;
             } else {
                 naxis3 = 4;
             }
+            bzero = 32768;
             break;
         default:
             av_log(avctx, AV_LOG_ERROR, "unsupported pixel format\n");
@@ -168,37 +170,12 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     memset(bytestream, ' ', t);
     bytestream += t;
 
-    if (rgb) {
-        switch (avctx->pix_fmt) {
-            case AV_PIX_FMT_GBRP:
-            case AV_PIX_FMT_GBRAP:
-                for (k = 0; k < naxis3; k++) {
-                    for (i = 0; i < avctx->height; i++) {
-                        ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
-                        memcpy(bytestream, ptr, avctx->width);
-                        bytestream += avctx->width;
-                    }
-                }
-                break;
-            case AV_PIX_FMT_GBRP16BE:
-            case AV_PIX_FMT_GBRAP16BE:
-                for (k = 0; k < naxis3; k++) {
-                    for (i = 0; i < avctx->height; i++) {
-                        ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
-                        for (j = 0; j < avctx->width; j++) {
-                            // subtracting bzero is equivalent to first bit flip
-                            bytestream_put_be16(&bytestream, AV_RB16(ptr) ^ flip);
-                            ptr += 2;
-                        }
-                    }
-                }
-                break;
-        }
-    } else {
+    for (k = 0; k < naxis3; k++) {
         for (i = 0; i < avctx->height; i++) {
-            ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0];
+            ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
             if (bitpix == 16) {
                 for (j = 0; j < avctx->width; j++) {
+                    // subtracting bzero is equivalent to first bit flip
                     bytestream_put_be16(&bytestream, AV_RB16(ptr) ^ flip);
                     ptr += 2;
                 }
