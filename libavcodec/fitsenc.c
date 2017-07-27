@@ -71,6 +71,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     uint8_t *bytestream, *bytestream_start, *ptr;
     uint64_t header_size = 2880, data_size = 0, padded_data_size = 0;
     int ret, bitpix, naxis, naxis3 = 1, bzero = 0, i, j, k, t, rgb = 0;
+    static const int map[] = {2, 0, 1, 3}; // mapping from GBRA -> RGBA as RGBA is to be stored in FITS file..
 
     switch (avctx->pix_fmt) {
         case AV_PIX_FMT_GRAY8:
@@ -82,24 +83,24 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             naxis = 2;
             bzero = 32768;
             break;
-        case AV_PIX_FMT_RGB24:
-        case AV_PIX_FMT_RGBA:
+        case AV_PIX_FMT_GBRP:
+        case AV_PIX_FMT_GBRAP:
             bitpix = 8;
             naxis = 3;
             rgb = 1;
-            if (avctx->pix_fmt == AV_PIX_FMT_RGB24) {
+            if (avctx->pix_fmt == AV_PIX_FMT_GBRP) {
                 naxis3 = 3;
             } else {
                 naxis3 = 4;
             }
             break;
-        case AV_PIX_FMT_RGB48BE:
-        case AV_PIX_FMT_RGBA64BE:
+        case AV_PIX_FMT_GBRP16BE:
+        case AV_PIX_FMT_GBRAP16BE:
             bitpix = 16;
             naxis = 3;
             bzero = 32768;
             rgb = 1;
-            if (avctx->pix_fmt == AV_PIX_FMT_RGB48BE) {
+            if (avctx->pix_fmt == AV_PIX_FMT_GBRP16BE) {
                 naxis3 = 3;
             } else {
                 naxis3 = 4;
@@ -168,26 +169,24 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     if (rgb) {
         switch (avctx->pix_fmt) {
-            case AV_PIX_FMT_RGB24:
-            case AV_PIX_FMT_RGBA:
+            case AV_PIX_FMT_GBRP:
+            case AV_PIX_FMT_GBRAP:
                 for (k = 0; k < naxis3; k++) {
                     for (i = 0; i < avctx->height; i++) {
-                        ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0] + k;
-                        for (j = 0; j < avctx->width; j++) {
-                            bytestream_put_byte(&bytestream, ptr[0]);
-                            ptr += naxis3;
-                        }
+                        ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
+                        memcpy(bytestream, ptr, avctx->width);
+                        bytestream += avctx->width;
                     }
                 }
                 break;
-            case AV_PIX_FMT_RGB48BE:
-            case AV_PIX_FMT_RGBA64BE:
+            case AV_PIX_FMT_GBRP16BE:
+            case AV_PIX_FMT_GBRAP16BE:
                 for (k = 0; k < naxis3; k++) {
                     for (i = 0; i < avctx->height; i++) {
-                        ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0] + k * 2;
+                        ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
                         for (j = 0; j < avctx->width; j++) {
                             bytestream_put_be16(&bytestream, AV_RB16(ptr) - bzero);
-                            ptr += naxis3 * 2;
+                            ptr += 2;
                         }
                     }
                 }
@@ -227,10 +226,11 @@ AVCodec ff_fits_encoder = {
     .priv_data_size = sizeof(FITSContext),
     .init           = fits_encode_init,
     .encode2        = fits_encode_frame,
-    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_RGBA64BE,
-                                                 AV_PIX_FMT_RGB48BE,
-                                                 AV_PIX_FMT_RGBA,
-                                                 AV_PIX_FMT_RGB24,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_GBRAP16BE,
+                                                 AV_PIX_FMT_GBRP16BE,
+                                                 AV_PIX_FMT_GBRP,
+                                                 AV_PIX_FMT_GBRAP,
+                                                 AV_PIX_FMT_GBRP,
                                                  AV_PIX_FMT_GRAY16BE,
                                                  AV_PIX_FMT_GRAY8,
                                                  AV_PIX_FMT_NONE },
