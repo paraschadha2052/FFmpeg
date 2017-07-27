@@ -415,9 +415,10 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     float   tflt;
     double  tdbl;
     int ret, i, j, k;
+    int map[] = {2, 0, 1, 3}; // mapping from GBRA -> RGBA as RGBA is to be stored in FITS file..
     uint8_t *dst8;
     uint16_t *dst16;
-    uint64_t size, t;
+    uint64_t t;
     FITSHeader header;
     FITSContext * fitsctx = avctx->priv_data;
 
@@ -427,20 +428,18 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
     if (ret < 0)
         return ret;
 
-    size = (abs(header.bitpix) >> 3) * (header.naxisn[0]) * (header.naxisn[1]);
-
     if (header.rgb) {
         if (header.bitpix == 8) {
             if (header.naxisn[2] == 3) {
-                avctx->pix_fmt = AV_PIX_FMT_RGB24;
+                avctx->pix_fmt = AV_PIX_FMT_GBRP;
             } else {
-                avctx->pix_fmt = AV_PIX_FMT_RGBA;
+                avctx->pix_fmt = AV_PIX_FMT_GBRAP;
             }
         } else if (header.bitpix == 16) {
             if (header.naxisn[2] == 3) {
-                avctx->pix_fmt = AV_PIX_FMT_RGB48LE;
+                avctx->pix_fmt = AV_PIX_FMT_GBRP16;
             } else {
-                avctx->pix_fmt = AV_PIX_FMT_RGBA64LE;
+                avctx->pix_fmt = AV_PIX_FMT_GBRAP16;
             }
         } else {
             av_log(avctx, AV_LOG_ERROR, "unsupported BITPIX = %d\n", header.bitpix);
@@ -468,22 +467,23 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
         switch(header.bitpix) {
 #define CASE_RGB(cas, dst, type, dref) \
     case cas: \
-        for (i = 0; i < avctx->height; i++) { \
-            dst = (type *) (p->data[0] + (avctx->height-i-1)* p->linesize[0]); \
-            for (j = 0; j < avctx->width; j++) { \
-                for (k = 0; k < header.naxisn[2]; k++) { \
-                    t32 = (int16_t) dref(ptr8 + size * k); \
+        for (k = 0; k < header.naxisn[2]; k++) { \
+            for (i = 0; i < avctx->height; i++) { \
+                dst = (type *) (p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]]); \
+                for (j = 0; j < avctx->width; j++) { \
+                    t32 = dref(ptr8); \
                     if (!header.blank_found || t32 != header.blank) { \
                         t = t32 * header.bscale + header.bzero; \
                     } else { \
                         t = fitsctx->blank_val; \
                     } \
                     *dst++ = (type) t; \
+                    ptr8 += cas >> 3; \
                 } \
-                ptr8 += cas >> 3; \
             } \
         } \
         break
+
             CASE_RGB(8, dst8, uint8_t, *);
             CASE_RGB(16, dst16, uint16_t, AV_RB16);
         }
