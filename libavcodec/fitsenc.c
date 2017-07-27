@@ -69,6 +69,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     AVFrame * const p = (AVFrame *)pict;
     FITSContext *fitsctx = avctx->priv_data;
     uint8_t *bytestream, *bytestream_start, *ptr;
+    const uint16_t flip = (1 << 15);
     uint64_t header_size = 2880, data_size = 0, padded_data_size = 0;
     int ret, bitpix, naxis, naxis3 = 1, bzero = 0, i, j, k, t, rgb = 0;
     static const int map[] = {2, 0, 1, 3}; // mapping from GBRA -> RGBA as RGBA is to be stored in FITS file..
@@ -185,7 +186,8 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                     for (i = 0; i < avctx->height; i++) {
                         ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
                         for (j = 0; j < avctx->width; j++) {
-                            bytestream_put_be16(&bytestream, AV_RB16(ptr) - bzero);
+                            // subtracting bzero is equivalent to first bit flip
+                            bytestream_put_be16(&bytestream, AV_RB16(ptr) ^ flip);
                             ptr += 2;
                         }
                     }
@@ -197,7 +199,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             ptr = p->data[0] + (avctx->height - i - 1) * p->linesize[0];
             if (bitpix == 16) {
                 for (j = 0; j < avctx->width; j++) {
-                    bytestream_put_be16(&bytestream, AV_RB16(ptr) - bzero);
+                    bytestream_put_be16(&bytestream, AV_RB16(ptr) ^ flip);
                     ptr += 2;
                 }
             } else {
