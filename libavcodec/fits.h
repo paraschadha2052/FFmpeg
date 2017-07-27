@@ -1,4 +1,5 @@
 /*
+ * FITS image format
  * Copyright (c) 2017 Paras Chadha
  *
  * This file is part of FFmpeg.
