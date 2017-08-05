@@ -37,6 +37,14 @@ static int fits_write_header(AVFormatContext *s)
     return 0;
 }
 
+/**
+ * Write one header line comprising of keyword and value(int)
+ * @param s AVFormat Context
+ * @param keyword pointer to the char array in which keyword is stored
+ * @param value the value corresponding to the keyword
+ * @param lines_written to keep track of lines written so far
+ * @return 0
+ */
 static int write_keyword_value(AVFormatContext *s, const char *keyword, int value, int *lines_written)
 {
     int len, ret;
@@ -56,29 +64,6 @@ static int write_keyword_value(AVFormatContext *s, const char *keyword, int valu
     *lines_written += 1;
     return 0;
 }
-
-/*
-static int write_keyword_value(AVFormatContext *s, const char *keyword, int value, int *lines_written)
-{
-    int len, ret, i;
-
-    len = strlen(keyword);
-    avio_write(s->pb, keyword, len);
-    for (i = len; i < 8; i++) {
-        avio_write(s->pb, " ", 1);
-    }
-
-    avio_write(s->pb, "=", 1);
-    avio_write(s->pb, " ", 1);
-
-    ret = avio_printf(s->pb, "%d", value);
-    for (i = ret; i < 70; i++) {
-        avio_write(s->pb, " ", 1);
-    }
-    *lines_written += 1;
-    return 0;
-}
-*/
 
 static int write_image_header(AVFormatContext *s)
 {
