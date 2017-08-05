@@ -34,63 +34,29 @@
 #include "bytestream.h"
 #include "internal.h"
 
-typedef struct FITSContext {
-    int first_image;
-} FITSContext;
-
-static av_cold int fits_encode_init(AVCodecContext *avctx)
-{
-    FITSContext * fitsctx = avctx->priv_data;
-    fitsctx->first_image = 1;
-    return 0;
-}
-
-static int write_keyword_value(uint8_t **bytestream, const char *keyword, int value)
-{
-    int len, ret;
-    uint8_t *header = *bytestream;
-    len = strlen(keyword);
-
-    memset(header, ' ', 80);
-    memcpy(header, keyword, len);
-    header[8] = '=';
-    header[9] = ' ';
-    header += 10;
-    ret = snprintf(header, 70, "%d", value);
-    header[ret] = ' ';
-
-    *bytestream += 80;
-    return 0;
-}
-
 static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                             const AVFrame *pict, int *got_packet)
 {
     AVFrame * const p = (AVFrame *)pict;
-    FITSContext *fitsctx = avctx->priv_data;
     uint8_t *bytestream, *bytestream_start, *ptr;
     const uint16_t flip = (1 << 15);
-    uint64_t header_size = 2880, data_size = 0, padded_data_size = 0;
-    int ret, bitpix, naxis, naxis3 = 1, bzero = 0, i, j, k, t, rgb = 0;
+    uint64_t data_size = 0, padded_data_size = 0;
+    int ret, bitpix, naxis3 = 1, i, j, k, bytes_left;
     int map[] = {2, 0, 1, 3}; // mapping from GBRA -> RGBA as RGBA is to be stored in FITS file..
 
     switch (avctx->pix_fmt) {
         case AV_PIX_FMT_GRAY8:
-            bitpix = 8;
-            naxis = 2;
-            map[0] = 0; // grayscale images should be directly mapped
-            break;
         case AV_PIX_FMT_GRAY16BE:
-            bitpix = 16;
-            naxis = 2;
-            map[0] = 0;
-            bzero = 32768;
+            map[0] = 0; // grayscale images should be directly mapped
+            if (avctx->pix_fmt == AV_PIX_FMT_GRAY8) {
+                bitpix = 8;
+            } else {
+                bitpix = 16;
+            }
             break;
         case AV_PIX_FMT_GBRP:
         case AV_PIX_FMT_GBRAP:
             bitpix = 8;
-            naxis = 3;
-            rgb = 1;
             if (avctx->pix_fmt == AV_PIX_FMT_GBRP) {
                 naxis3 = 3;
             } else {
@@ -100,14 +66,11 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         case AV_PIX_FMT_GBRP16BE:
         case AV_PIX_FMT_GBRAP16BE:
             bitpix = 16;
-            naxis = 3;
-            rgb = 1;
             if (avctx->pix_fmt == AV_PIX_FMT_GBRP16BE) {
                 naxis3 = 3;
             } else {
                 naxis3 = 4;
             }
-            bzero = 32768;
             break;
         default:
             av_log(avctx, AV_LOG_ERROR, "unsupported pixel format\n");
@@ -117,58 +80,11 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     data_size = (bitpix >> 3) * avctx->height * avctx->width * naxis3;
     padded_data_size = ((data_size + 2879) / 2880 ) * 2880;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, header_size + padded_data_size, 0)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, padded_data_size, 0)) < 0)
         return ret;
 
     bytestream_start =
     bytestream       = pkt->data;
-
-    if (fitsctx->first_image) {
-        memcpy(bytestream, "SIMPLE  = ", 10);
-        memset(bytestream + 10, ' ', 70);
-        bytestream[29] = 'T';
-    } else {
-        memcpy(bytestream, "XTENSION= 'IMAGE   '", 20);
-        memset(bytestream + 20, ' ', 60);
-    }
-    bytestream += 80;
-
-    write_keyword_value(&bytestream, "BITPIX", bitpix);         // no of bits per pixel
-    write_keyword_value(&bytestream, "NAXIS", naxis);           // no of dimensions of image
-    write_keyword_value(&bytestream, "NAXIS1", avctx->width);   // first dimension i.e. width
-    write_keyword_value(&bytestream, "NAXIS2", avctx->height);  // second dimension i.e. height
-
-    if (rgb)
-        write_keyword_value(&bytestream, "NAXIS3", naxis3);     // third dimension to store RGBA planes
-
-    if (!fitsctx->first_image) {
-        write_keyword_value(&bytestream, "PCOUNT", 0);
-        write_keyword_value(&bytestream, "GCOUNT", 1);
-    } else {
-        fitsctx->first_image = 0;
-    }
-
-    /*
-     * Since FITS does not support unsigned 16 bit integers,
-     * BZERO = 32768 is used to store unsigned 16 bit integers as
-     * signed integers so that it can be read properly.
-     */
-    if (bitpix == 16)
-        write_keyword_value(&bytestream, "BZERO", bzero);
-
-    if (rgb) {
-        memcpy(bytestream, "CTYPE3  = 'RGB     '", 20);
-        memset(bytestream + 20, ' ', 60);
-        bytestream += 80;
-    }
-
-    memcpy(bytestream, "END", 3);
-    memset(bytestream + 3, ' ', 77);
-    bytestream += 80;
-
-    t = header_size - (bytestream - bytestream_start);
-    memset(bytestream, ' ', t);
-    bytestream += t;
 
     for (k = 0; k < naxis3; k++) {
         for (i = 0; i < avctx->height; i++) {
@@ -186,9 +102,9 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         }
     }
 
-    t = padded_data_size - data_size;
-    memset(bytestream, 0, t);
-    bytestream += t;
+    bytes_left = padded_data_size - data_size;
+    memset(bytestream, 0, bytes_left);
+    bytestream += bytes_left;
 
     pkt->size   = bytestream - bytestream_start;
     pkt->flags |= AV_PKT_FLAG_KEY;
@@ -202,8 +118,6 @@ AVCodec ff_fits_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("Flexible Image Transport System"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_FITS,
-    .priv_data_size = sizeof(FITSContext),
-    .init           = fits_encode_init,
     .encode2        = fits_encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_GBRAP16BE,
                                                  AV_PIX_FMT_GBRP16BE,
