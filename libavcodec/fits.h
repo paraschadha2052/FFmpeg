@@ -1,5 +1,5 @@
 /*
- * FITS image format
+ * FITS image format common prototypes and structures
  * Copyright (c) 2017 Paras Chadha
  *
  * This file is part of FFmpeg.
