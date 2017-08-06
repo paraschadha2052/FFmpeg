@@ -150,11 +150,7 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             if (header->naxis) {
                 header->state = STATE_NAXIS_N;
             } else {
-                if(header->image_extension) {
-                    header->state = STATE_PCOUNT;
-                } else {
-                    header->state = STATE_REST;
-                }
+                header->state = STATE_REST;
             }
             break;
         case STATE_NAXIS_N:
@@ -172,34 +168,8 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             dict_set_if_not_null(metadata, keyword, value);
             header->naxis_index++;
             if (header->naxis_index == header->naxis) {
-                if(header->image_extension) {
-                    header->state = STATE_PCOUNT;
-                } else {
-                    header->state = STATE_REST;
-                }
+                header->state = STATE_REST;
             }
-            break;
-        case STATE_PCOUNT:
-            CHECK_KEYWORD("PCOUNT");
-            CHECK_VALUE("PCOUNT", pcount);
-
-            if (header->pcount) {
-                av_log(avcl, AV_LOG_ERROR, "expected PCOUNT = 0 but found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
-
-            header->state = STATE_GCOUNT;
-            break;
-        case STATE_GCOUNT:
-            CHECK_KEYWORD("GCOUNT");
-            CHECK_VALUE("GCOUNT", gcount);
-
-            if (header->gcount != 1) {
-                av_log(avcl, AV_LOG_ERROR, "expected GCOUNT = 1 but found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
-
-            header->state = STATE_REST;
             break;
         case STATE_REST:
             if (!strcmp(keyword, "BLANK") && sscanf(value, "%"SCNd64"", &t) == 1) {
@@ -221,12 +191,10 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
                 return 1;
             } else if (!strcmp(keyword, "GROUPS") && sscanf(value, "%c", &c) == 1) {
                 header->groups = (c == 'T');
-            } else if (!header->image_extension) {
-                if (!strcmp(keyword, "GCOUNT") && sscanf(value, "%"SCNd64"", &t) == 1) {
-                    header->gcount = t;
-                } else if (!strcmp(keyword, "PCOUNT") && sscanf(value, "%"SCNd64"", &t) == 1) {
-                    header->pcount = t;
-                }
+            } else if (!strcmp(keyword, "GCOUNT") && sscanf(value, "%"SCNd64"", &t) == 1) {
+                header->gcount = t;
+            } else if (!strcmp(keyword, "PCOUNT") && sscanf(value, "%"SCNd64"", &t) == 1) {
+                header->pcount = t;
             }
             dict_set_if_not_null(metadata, keyword, value);
             break;

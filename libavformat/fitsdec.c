@@ -36,14 +36,12 @@ typedef struct FITSContext {
     const AVClass *class;
     AVRational framerate;
     int first_image;
-    int image;
     int64_t pts;
 } FITSContext;
 
 static int fits_probe(AVProbeData *p)
 {
     const uint8_t *b = p->buf;
-
     if (!memcmp(b, "SIMPLE  =                    T", 30))
         return AVPROBE_SCORE_MAX - 1;
     return 0;
@@ -67,12 +65,22 @@ static int fits_read_header(AVFormatContext *s)
     return 0;
 }
 
+/**
+ * Parses header and checks that the current HDU contains image or not
+ * It also stores the header in the avbuf and stores the size of data part in data_size
+ * @param s pointer to AVFormat Context
+ * @param fits pointer to FITSContext
+ * @param header pointer to FITSHeader
+ * @param avbuf pointer to AVBPrint to store the header
+ * @param data_size to store the size of data part
+ * @return 1 if image found, 0 if any other extension and AVERROR_INVALIDDATA otherwise
+ */
 static int64_t is_image(AVFormatContext *s, FITSContext *fits, FITSHeader *header,
-                         AVBPrint *avbuf, uint64_t *size)
+                         AVBPrint *avbuf, uint64_t *data_size)
 {
     int i, ret, image = 0;
     char buf[FITS_BLOCK_SIZE] = { 0 };
-    int64_t buf_size = 0, data_size = 0, t;
+    int64_t buf_size = 0, size = 0, t;
 
     do {
         ret = avio_read(s->pb, buf, FITS_BLOCK_SIZE);
@@ -99,41 +107,36 @@ static int64_t is_image(AVFormatContext *s, FITSContext *fits, FITSHeader *heade
     if (header->groups) {
         image = 0;
         if (header->naxis > 1)
-            data_size = 1;
-        for (i = 1; i < header->naxis; i++) {
-            if(data_size && header->naxisn[i] > LLONG_MAX / data_size)
-                return AVERROR_INVALIDDATA;
-            data_size *= header->naxisn[i];
-        }
+            size = 1;
     } else if (header->naxis) {
-        data_size = 1;
-        for (i = 0; i < header->naxis; i++) {
-            if(data_size && header->naxisn[i] > LLONG_MAX / data_size)
-                return AVERROR_INVALIDDATA;
-            data_size *= header->naxisn[i];
-        }
+        size = header->naxisn[0];
     } else {
         image = 0;
     }
 
-    if(header->pcount > LLONG_MAX - data_size)
+    for (i = 1; i < header->naxis; i++) {
+        if(size && header->naxisn[i] > UINT64_MAX / size)
+            return AVERROR_INVALIDDATA;
+        size *= header->naxisn[i];
+    }
+
+    if(header->pcount > UINT64_MAX - size)
         return AVERROR_INVALIDDATA;
-    data_size += header->pcount;
+    size += header->pcount;
 
     t = (abs(header->bitpix) >> 3) * ((int64_t) header->gcount);
-    if(data_size && t > LLONG_MAX / data_size)
+    if(size && t > UINT64_MAX / size)
         return AVERROR_INVALIDDATA;
-    data_size *= t;
+    size *= t;
 
-    if (!data_size) {
+    if (!size) {
         image = 0;
     } else {
-        if(2879 > LLONG_MAX - data_size)
+        if(FITS_BLOCK_SIZE - 1 > UINT64_MAX - size)
             return AVERROR_INVALIDDATA;
-        data_size = ((data_size + 2879) / 2880) * 2880;
+        size = ((size + FITS_BLOCK_SIZE - 1) / FITS_BLOCK_SIZE) * FITS_BLOCK_SIZE;
     }
-
-    *size = data_size;
+    *data_size = size;
     return image;
 }
 
@@ -177,7 +180,6 @@ static int fits_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->stream_index = 0;
     pkt->flags |= AV_PKT_FLAG_KEY;
-    pkt->pos = pos;
 
     ret = av_bprint_finalize(&avbuf, &buf);
     if (ret < 0) {

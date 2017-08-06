@@ -99,7 +99,7 @@ static int fill_data_min_max(const uint8_t *ptr8, FITSHeader *header, const uint
  * @param ptr pointer to pointer to the data
  * @param header pointer to the FITSHeader
  * @param end pointer to end of packet
- * @param meta pointer to pointer to AVDictionary to store metadata
+ * @param metadata pointer to pointer to AVDictionary to store metadata
  * @return 0 if calculated successfully otherwise AVERROR_INVALIDDATA
  */
 static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHeader *header,
@@ -143,7 +143,7 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
 
     size = abs(header->bitpix) >> 3;
     for (i = 0; i < header->naxis; i++) {
-        if (header->naxisn[i] > ULLONG_MAX / size) {
+        if (header->naxisn[i] > SIZE_MAX / size) {
             av_log(avctx, AV_LOG_ERROR, "unsupported size of FITS image");
             return AVERROR_INVALIDDATA;
         }
