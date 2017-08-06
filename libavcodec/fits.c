@@ -103,7 +103,7 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
     read_keyword_value(line, keyword, value);
     switch (header->state) {
         case STATE_SIMPLE:
-            if (strncmp(keyword, "SIMPLE", 6)) {
+            if (strcmp(keyword, "SIMPLE")) {
                 av_log(avcl, AV_LOG_ERROR, "expected SIMPLE keyword, found %s = %s\n", keyword, value);
                 return AVERROR_INVALIDDATA;
             }
@@ -117,19 +117,19 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             header->state = STATE_BITPIX;
             break;
         case STATE_XTENSION:
-            if (strncmp(keyword, "XTENSION", 8)) {
+            if (strcmp(keyword, "XTENSION")) {
                 av_log(avcl, AV_LOG_ERROR, "expected XTENSION keyword, found %s = %s\n", keyword, value);
                 return AVERROR_INVALIDDATA;
             }
 
-            if (!strncmp(value, "'IMAGE   '", 10)) {
+            if (!strcmp(value, "'IMAGE   '")) {
                 header->image_extension = 1;
             }
 
             header->state = STATE_BITPIX;
             break;
         case STATE_BITPIX:
-            if (strncmp(keyword, "BITPIX", 6)) {
+            if (strcmp(keyword, "BITPIX")) {
                 av_log(avcl, AV_LOG_ERROR, "expected BITPIX keyword, found %s = %s\n", keyword, value);
                 return AVERROR_INVALIDDATA;
             }
@@ -142,7 +142,7 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             header->state = STATE_NAXIS;
             break;
         case STATE_NAXIS:
-            if (strncmp(keyword, "NAXIS", 5)) {
+            if (strcmp(keyword, "NAXIS")) {
                 av_log(avcl, AV_LOG_ERROR, "expected NAXIS keyword, found %s = %s\n", keyword, value);
                 return AVERROR_INVALIDDATA;
             }
@@ -186,7 +186,7 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             }
             break;
         case STATE_PCOUNT:
-            if (strncmp(keyword, "PCOUNT", 6)) {
+            if (strcmp(keyword, "PCOUNT")) {
                 av_log(avcl, AV_LOG_ERROR, "expected PCOUNT keyword, found %s = %s\n", keyword, value);
                 return AVERROR_INVALIDDATA;
             }
@@ -204,7 +204,7 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             header->state = STATE_GCOUNT;
             break;
         case STATE_GCOUNT:
-            if (strncmp(keyword, "GCOUNT", 6)) {
+            if (strcmp(keyword, "GCOUNT")) {
                 av_log(avcl, AV_LOG_ERROR, "expected GCOUNT keyword, found %s = %s\n", keyword, value);
                 return AVERROR_INVALIDDATA;
             }
@@ -222,29 +222,29 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             header->state = STATE_REST;
             break;
         case STATE_REST:
-            if (!strncmp(keyword, "BLANK", 5) && sscanf(value, "%"SCNd64"", &t) == 1) {
+            if (!strcmp(keyword, "BLANK") && sscanf(value, "%"SCNd64"", &t) == 1) {
                 header->blank = t;
                 header->blank_found = 1;
-            } else if (!strncmp(keyword, "BSCALE", 6) && sscanf(value, "%lf", &d) == 1) {
+            } else if (!strcmp(keyword, "BSCALE") && sscanf(value, "%lf", &d) == 1) {
                 header->bscale = d;
-            } else if (!strncmp(keyword, "BZERO", 5) && sscanf(value, "%lf", &d) == 1) {
+            } else if (!strcmp(keyword, "BZERO") && sscanf(value, "%lf", &d) == 1) {
                 header->bzero = d;
-            } else if (!strncmp(keyword, "CTYPE3", 6) && !strncmp(value, "'RGB", 4)) {
+            } else if (!strcmp(keyword, "CTYPE3") && !strcmp(value, "'RGB")) {
                 header->rgb = 1;
-            } else if (!strncmp(keyword, "DATAMAX", 7) && sscanf(value, "%lf", &d) == 1) {
+            } else if (!strcmp(keyword, "DATAMAX") && sscanf(value, "%lf", &d) == 1) {
                 header->data_max_found = 1;
                 header->data_max = d;
-            } else if (!strncmp(keyword, "DATAMIN", 7) && sscanf(value, "%lf", &d) == 1) {
+            } else if (!strcmp(keyword, "DATAMIN") && sscanf(value, "%lf", &d) == 1) {
                 header->data_min_found = 1;
                 header->data_min = d;
-            } else if (!strncmp(keyword, "END\0", 4)) {
+            } else if (!strcmp(keyword, "END")) {
                 return 1;
-            } else if (!strncmp(keyword, "GROUPS", 6) && sscanf(value, "%c", &c) == 1) {
+            } else if (!strcmp(keyword, "GROUPS") && sscanf(value, "%c", &c) == 1) {
                 header->groups = (c == 'T');
             } else if (!header->image_extension) {
-                if (!strncmp(keyword, "GCOUNT", 6) && sscanf(value, "%"SCNd64"", &t) == 1) {
+                if (!strcmp(keyword, "GCOUNT") && sscanf(value, "%"SCNd64"", &t) == 1) {
                     header->gcount = t;
-                } else if (!strncmp(keyword, "PCOUNT", 6) && sscanf(value, "%"SCNd64"", &t) == 1) {
+                } else if (!strcmp(keyword, "PCOUNT") && sscanf(value, "%"SCNd64"", &t) == 1) {
                     header->pcount = t;
                 }
             }
