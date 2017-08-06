@@ -106,8 +106,8 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
                             const uint8_t *end, AVDictionary **metadata)
 {
     const uint8_t *ptr8 = *ptr;
-    int lines_read, i, ret;
-    uint64_t size, t;
+    int lines_read, bytes_left, i, ret;
+    size_t size;
 
     lines_read = 1; // to account for first header line, SIMPLE or XTENSION which is not included in packet...
     avpriv_fits_header_init(header, STATE_BITPIX);
@@ -121,11 +121,10 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
     if (ret < 0)
         return ret;
 
-    lines_read %= 36;
-    t = ((36 - lines_read) % 36) * 80;
-    if (end - ptr8 < t)
+    bytes_left = (((lines_read + 35) / 36) * 36 - lines_read) * 80;
+    if (end - ptr8 < bytes_left)
         return AVERROR_INVALIDDATA;
-    ptr8 += t;
+    ptr8 += bytes_left;
 
     if (header->rgb && (header->naxis != 3 || (header->naxisn[2] != 3 && header->naxisn[2] != 4))) {
         av_log(avctx, AV_LOG_ERROR, "File contains RGB image but NAXIS = %d and NAXIS3 = %d\n", header->naxis, header->naxisn[2]);

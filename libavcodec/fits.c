@@ -93,6 +93,18 @@ static int read_keyword_value(const uint8_t *ptr8, char *keyword, char *value)
     return 0;
 }
 
+#define CHECK_KEYWORD(key) \
+    if (strcmp(keyword, key)) { \
+        av_log(avcl, AV_LOG_ERROR, "expected %s keyword, found %s = %s\n", key, keyword, value); \
+        return AVERROR_INVALIDDATA; \
+    }
+
+#define CHECK_VALUE(key, val) \
+    if (sscanf(value, "%d", &header->val) != 1) { \
+        av_log(avcl, AV_LOG_ERROR, "invalid value of %s keyword, %s = %s\n", key, keyword, value); \
+        return AVERROR_INVALIDDATA; \
+    }
+
 int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t line[80], AVDictionary ***metadata)
 {
     int dim_no, ret;
@@ -103,10 +115,7 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
     read_keyword_value(line, keyword, value);
     switch (header->state) {
         case STATE_SIMPLE:
-            if (strcmp(keyword, "SIMPLE")) {
-                av_log(avcl, AV_LOG_ERROR, "expected SIMPLE keyword, found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
+            CHECK_KEYWORD("SIMPLE");
 
             if (value[0] == 'F') {
                 av_log(avcl, AV_LOG_WARNING, "not a standard FITS file\n");
@@ -114,13 +123,11 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
                 av_log(avcl, AV_LOG_ERROR, "invalid value of SIMPLE keyword, SIMPLE = %c\n", value[0]);
                 return AVERROR_INVALIDDATA;
             }
+
             header->state = STATE_BITPIX;
             break;
         case STATE_XTENSION:
-            if (strcmp(keyword, "XTENSION")) {
-                av_log(avcl, AV_LOG_ERROR, "expected XTENSION keyword, found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
+            CHECK_KEYWORD("XTENSION");
 
             if (!strcmp(value, "'IMAGE   '")) {
                 header->image_extension = 1;
@@ -129,30 +136,17 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             header->state = STATE_BITPIX;
             break;
         case STATE_BITPIX:
-            if (strcmp(keyword, "BITPIX")) {
-                av_log(avcl, AV_LOG_ERROR, "expected BITPIX keyword, found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
-
-            if (sscanf(value, "%d", &header->bitpix) != 1) {
-                av_log(avcl, AV_LOG_ERROR, "invalid value of BITPIX keyword, %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
+            CHECK_KEYWORD("BITPIX");
+            CHECK_VALUE("BITPIX", bitpix);
             dict_set_if_not_null(metadata, keyword, value);
+
             header->state = STATE_NAXIS;
             break;
         case STATE_NAXIS:
-            if (strcmp(keyword, "NAXIS")) {
-                av_log(avcl, AV_LOG_ERROR, "expected NAXIS keyword, found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
-
-            if (sscanf(value, "%d", &header->naxis) != 1) {
-                av_log(avcl, AV_LOG_ERROR, "invalid value of NAXIS keyword, %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
-
+            CHECK_KEYWORD("NAXIS");
+            CHECK_VALUE("NAXIS", naxis);
             dict_set_if_not_null(metadata, keyword, value);
+
             if (header->naxis) {
                 header->state = STATE_NAXIS_N;
             } else {
@@ -186,15 +180,8 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             }
             break;
         case STATE_PCOUNT:
-            if (strcmp(keyword, "PCOUNT")) {
-                av_log(avcl, AV_LOG_ERROR, "expected PCOUNT keyword, found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
-
-            if (sscanf(value, "%d", &header->pcount) != 1) {
-                av_log(avcl, AV_LOG_ERROR, "invalid value of PCOUNT keyword, %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
+            CHECK_KEYWORD("PCOUNT");
+            CHECK_VALUE("PCOUNT", pcount);
 
             if (header->pcount) {
                 av_log(avcl, AV_LOG_ERROR, "expected PCOUNT = 0 but found %s = %s\n", keyword, value);
@@ -204,15 +191,8 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
             header->state = STATE_GCOUNT;
             break;
         case STATE_GCOUNT:
-            if (strcmp(keyword, "GCOUNT")) {
-                av_log(avcl, AV_LOG_ERROR, "expected GCOUNT keyword, found %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
-
-            if (sscanf(value, "%d", &header->gcount) != 1) {
-                av_log(avcl, AV_LOG_ERROR, "invalid value of GCOUNT keyword, %s = %s\n", keyword, value);
-                return AVERROR_INVALIDDATA;
-            }
+            CHECK_KEYWORD("GCOUNT");
+            CHECK_VALUE("GCOUNT", gcount);
 
             if (header->gcount != 1) {
                 av_log(avcl, AV_LOG_ERROR, "expected GCOUNT = 1 but found %s = %s\n", keyword, value);
@@ -229,7 +209,7 @@ int avpriv_fits_header_parse_line(void *avcl, FITSHeader *header, const uint8_t 
                 header->bscale = d;
             } else if (!strcmp(keyword, "BZERO") && sscanf(value, "%lf", &d) == 1) {
                 header->bzero = d;
-            } else if (!strcmp(keyword, "CTYPE3") && !strcmp(value, "'RGB")) {
+            } else if (!strcmp(keyword, "CTYPE3") && !strncmp(value, "'RGB", 4)) {
                 header->rgb = 1;
             } else if (!strcmp(keyword, "DATAMAX") && sscanf(value, "%lf", &d) == 1) {
                 header->data_max_found = 1;
