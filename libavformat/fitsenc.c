@@ -47,7 +47,7 @@ static int fits_write_header(AVFormatContext *s)
  */
 static int write_keyword_value(AVFormatContext *s, const char *keyword, int value, int *lines_written)
 {
-    int len, ret;
+    int len, ret, i;
     uint8_t header[80];
 
     len = strlen(keyword);
@@ -58,7 +58,9 @@ static int write_keyword_value(AVFormatContext *s, const char *keyword, int valu
     header[9] = ' ';
 
     ret = snprintf(header + 10, 70, "%d", value);
-    header[ret + 10] = ' ';
+    for (i = ret + 10; i < 80; i++) {
+        header[i] = ' ';
+    }
 
     avio_write(s->pb, header, sizeof(header));
     *lines_written += 1;
